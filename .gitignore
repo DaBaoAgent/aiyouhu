@@ -1,4 +1,6 @@
 .env
 scripts/.env
+.env.bak
+*.bak
 __pycache__/
 *.pyc
