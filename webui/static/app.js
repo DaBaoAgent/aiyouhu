@@ -388,6 +388,8 @@ function taskCard(t) {
   if (t.status === "failed") metaBits.push(t.error);
   const bar = t.status === "running" || t.status === "queued"
     ? `<div class="bar"><i style="width:${t.progress}%"></i></div>` : "";
+  const actions = t.status === "success"
+    ? `<a class="btn" style="padding:5px 12px;font-size:12px;text-decoration:none" href="/api/tasks/${t.id}/video" download title="下载成片">⬇</a>` : "";
   return `<div class="task" data-tid="${t.id}" data-sig="${taskSig(t)}">
     <div class="thumb" onclick="${t.status === "success" ? `this.querySelector('video').play()\`` : ""}">${thumb}</div>
     <div class="info">
@@ -395,7 +397,18 @@ function taskCard(t) {
       ${bar}
     </div>
     <span class="status ${st[0]}">${st[1]}</span>
+    ${actions}
+    <button class="btn" style="padding:5px 12px;font-size:12px" onclick="delTask('${t.id}')" title="删除任务记录">🗑</button>
   </div>`;
+}
+
+async function delTask(id) {
+  if (!confirm("删除该任务记录？（成片文件保留）")) return;
+  try {
+    const res = await api("/api/tasks/" + id, { method: "DELETE" });
+    if (res.ok) { toast("任务已删除"); refreshTasks(); }
+    else toast(res.error || "删除失败");
+  } catch (err) { toast("删除失败: " + err.message); }
 }
 
 async function refreshTasks() {

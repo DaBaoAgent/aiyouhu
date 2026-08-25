@@ -277,6 +277,14 @@ def get_logs(limit: int = 200):
     return {"logs": entries[:limit]}
 
 
+@app.delete("/api/tasks/{tid}")
+def delete_task(tid: str):
+    try:
+        return tasks.delete_task(tid)
+    except KeyError:
+        raise HTTPException(404, "任务不存在")
+
+
 @app.get("/api/tasks/{tid}/video")
 def task_video(tid: str):
     t = tasks.TASKS.get(tid)
