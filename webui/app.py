@@ -3,6 +3,7 @@
 """爱优护全自动视频生成工厂 - FastAPI 入口
 启动: uvicorn app:app --host 127.0.0.1 --port 8000
 """
+import ctypes
 import os
 import shutil
 import uuid
@@ -170,7 +171,9 @@ def list_bgm():
 def list_dirs(path: str = ""):
     """目录浏览（供前端选成片输出目录）。path 空 → 返回盘符列表；否则列出子目录。只读。"""
     if not path:
-        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
+        # GetLogicalDrives 即时返回，避免 os.path.exists 逐个探测盘符时卡光驱/网络盘 IO
+        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        drives = [f"{chr(ord('A') + i)}:\\" for i in range(26) if bitmask & (1 << i)]
         return {"path": "", "parent": None, "dirs": [{"name": d, "path": d} for d in drives]}
     p = Path(path)
     if not p.exists() or not p.is_dir():
