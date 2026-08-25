@@ -60,7 +60,7 @@ SYSTEM_PROMPT = """你是资深短视频导演，专为「爱优护轻便侠218�
 
 ---口播文案---
 口播文案只允许是旁白解说词：念给观众听的完整台词（约每分镜30字，语气亲切有感染力，突出卖点，可口语化）。
-严禁在口播文案中出现「画面/镜头/特写/机位/切/推近/拉远/动作/表情/老年男人/孙女」等画面描述词汇，严禁出现【分镜】标记，严禁重复分镜画面描述，只允许台词本身。必须输出「---口播文案---」分隔符，即使文案很短。"""
+严禁在口播文案中出现「画面/镜头/特写/机位/切/推近/拉远/动作/表情/老年男人/孙女」等画面描述词汇，严禁出现【分镜】标记，严禁给口播文案加任何序号/编号前缀（如（分镜1）、1.、分镜1：），严禁重复分镜画面描述，只允许台词本身。必须输出「---口播文案---」分隔符，即使文案很短。"""
 
 
 def _call_deepseek(user_prompt: str, max_tokens: int = 2000) -> str:
@@ -78,7 +78,7 @@ def _call_deepseek(user_prompt: str, max_tokens: int = 2000) -> str:
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt},
                     ],
-                    "temperature": 0.95, "max_tokens": max_tokens,
+                    "temperature": 0.8, "max_tokens": max_tokens,
                 },
                 timeout=120,
             )
@@ -89,6 +89,21 @@ def _call_deepseek(user_prompt: str, max_tokens: int = 2000) -> str:
             if attempt == 2:
                 raise RuntimeError(f"DeepSeek 请求失败: {e}")
             time.sleep(3)
+
+
+def clean_dub(dub: str) -> str:
+    """清洗口播文案：剥离 AI 加的分镜编号/序号前缀（（分镜1）、分镜1：、1. 等），只留纯旁白"""
+    if not dub:
+        return ""
+    lines = []
+    for ln in dub.splitlines():
+        ln = ln.strip()
+        ln = re.sub(r"^[（(]\s*分镜\s*\d+\s*[）)]\s*", "", ln)   # （分镜1）
+        ln = re.sub(r"^分镜\s*\d+\s*[：:.\-]?\s*", "", ln)        # 分镜1：
+        ln = re.sub(r"^\d+\s*[.、)]\s*", "", ln)                  # 1. 2、
+        if ln:
+            lines.append(ln)
+    return "".join(lines).strip()
 
 
 def parse_storyboard(text: str) -> tuple[list[str], str]:
@@ -103,6 +118,7 @@ def parse_storyboard(text: str) -> tuple[list[str], str]:
         if m:
             dub = m.group(1).strip()
             break
+    dub = clean_dub(dub)
     if not shots:  # 兜底：按行拆分
         shots = [l.strip() for l in text.splitlines() if l.strip() and not l.startswith("---")]
     return shots, dub

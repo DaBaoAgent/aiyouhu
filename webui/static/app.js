@@ -148,9 +148,15 @@ function collectProductInfo() {
 }
 function cleanDub(s) {
   if (!s) return "";
+  // 剥离行首分镜编号/序号前缀：（分镜1）、分镜1：、1. 等
+  s = s.replace(/^[（(]\s*分镜\s*\d+\s*[）)]\s*/gm, "")
+       .replace(/^分镜\s*\d+\s*[：:.\-]?\s*/gm, "")
+       .replace(/^\d+\s*[.、)]\s*/gm, "")
+       .trim();
+  // 仍含分镜标记（方括号或圆括号）→ 判脏
+  if (/[【（(]\s*分镜/.test(s)) return "";
   // 剔除"画面描述:"等前缀标记，只留旁白
   s = s.replace(/^(画面描述|画面|分镜描述)\s*[：:]\s*/g, "").trim();
-  if (/【分镜/.test(s)) return "";                 // 混入分镜标记 → 判脏
   const shotWords = (s.match(/镜头|画面|特写|机位|拉近|推近|切换|动作/g) || []).length;
   if (shotWords >= 2) return "";                    // 画面描述词汇过多 → 判脏
   return s;
