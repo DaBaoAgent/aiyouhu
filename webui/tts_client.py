@@ -133,27 +133,35 @@ def _rate_from_speed(speed: float) -> str:
     return f"{pct:+d}%"
 
 
-def _tts_sync(text: str, voice: dict, speed: float = 1.0,
-              out_path: Path = None) -> Path:
-    """edge-tts 合成一段音频(mp3), 返回路径。直连失败自动走代理重试"""
-    out_path = out_path or (TTS_DIR / f"tts_{uuid.uuid4().hex[:8]}.mp3")
-    text = normalize_text(text)  # 数字转中文读法(型号218→二幺八, 39公里→三十九公里)
-    rate = _rate_from_speed(speed)
-
-    async def _run(proxy: str | None = None):
-        com = edge_tts.Communicate(text, voice["id"], rate=rate, proxy=proxy)
+async def _tts_async(text: str, voice_id: str, rate: str, out_path: Path):
+    """edge-tts 单段合成（async 版），直连失败自动走代理重试"""
+    async def _run(proxy):
+        com = edge_tts.Communicate(text, voice_id, rate=rate, proxy=proxy)
         await com.save(str(out_path))
-
     try:
-        asyncio.run(_run())
+        await _run(None)
     except Exception:
         # 直连失败 → 走本机 VPN 代理重试一次
         try:
-            asyncio.run(_run(proxy=PROXY))
+            await _run(PROXY)
         except Exception as e:
             raise RuntimeError(f"edge-tts 合成失败(直连与代理均失败): {e}")
     if not out_path.exists() or out_path.stat().st_size < 200:
         raise RuntimeError("edge-tts 返回为空，请检查网络后重试")
+
+
+def _tts_sync(text: str, voice: dict, speed: float = 1.0,
+              out_path: Path = None) -> Path:
+    """同步单段合成（试听用），返回 mp3 路径"""
+    out_path = out_path or (TTS_DIR / f"tts_{uuid.uuid4().hex[:8]}.mp3")
+    text = normalize_text(text)  # 数字转中文读法(型号218→二幺八, 39公里→三十九公里)
+    rate = _rate_from_speed(speed)
+    try:
+        asyncio.run(_tts_async(text, voice["id"], rate, out_path))
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"edge-tts 合成失败: {e}")
     return out_path
 
 
@@ -180,17 +188,24 @@ def split_text(text: str, max_chars: int = 180) -> list[str]:
 
 def dub_text(text: str, voice: dict, speed: float = 1.0, tag: str = "dub",
              on_seg: callable = None) -> Path:
-    """整段文案配音：分段 edge-tts 合成 → 拼接 → 返回 wav 路径。on_seg(i, n, path) 每段完成回调"""
+    """整段文案配音：分段 edge-tts 并发合成 → 拼接 → 返回 wav 路径。on_seg(i, n, path) 每段完成回调"""
     segs = split_text(text)
     if not segs:
         raise RuntimeError("配音文案为空")
-    parts = []
-    for i, seg in enumerate(segs):
+    rate = _rate_from_speed(speed)
+
+    async def _synth(i: int, seg: str):
         p = TTS_DIR / f"{tag}_{i:02d}.mp3"
-        _tts_sync(seg, voice, speed, p)
-        parts.append(p)
-        if on_seg:
-            on_seg(i + 1, len(segs), p)
+        await _tts_async(normalize_text(seg), voice["id"], rate, p)
+        return i, p
+
+    async def _run_all():
+        return await asyncio.gather(*[_synth(i, s) for i, s in enumerate(segs)])
+
+    parts = [p for _, p in sorted(asyncio.run(_run_all()))]
+    if on_seg:
+        for i, p in enumerate(parts, 1):
+            on_seg(i, len(parts), p)
     out = TTS_DIR / f"{tag}_full.wav"
     if len(parts) == 1:
         subprocess.run(
