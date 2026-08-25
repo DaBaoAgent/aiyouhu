@@ -160,15 +160,29 @@ def _gen_shot(task_id: str, shot_idx: int, params: dict, prompt: str, out_dir: P
     t0 = time.time()
     try:
         out = out_dir / f"shot_{shot_idx:02d}.mp4"
-        _, _ = _h3_submit(
-            params.get("workflow", "multi_image"),
-            prompt,
-            params.get("images", []),
-            params.get("resolution", "1080p竖"),
-            int(params.get("duration", 10)),
-            out,
-            task_id=task_id,
-        )
+        try:
+            _, _ = _h3_submit(
+                params.get("workflow", "multi_image"),
+                prompt,
+                params.get("images", []),
+                params.get("resolution", "1080p竖"),
+                int(params.get("duration", 10)),
+                out,
+                task_id=task_id,
+            )
+        except Exception as e:
+            # 首次失败自动重试 1 次（新 H3 任务，避免网络抖动白花排队时间）
+            _log(task_id, f"⚠ 分镜{shot_idx} 首次失败: {e}，自动重试 1 次")
+            _, _ = _h3_submit(
+                params.get("workflow", "multi_image"),
+                prompt,
+                params.get("images", []),
+                params.get("resolution", "1080p竖"),
+                int(params.get("duration", 10)),
+                out,
+                task_id=task_id,
+            )
+            _log(task_id, f"↩ 分镜{shot_idx} 重试成功")
         _log(task_id, f"✅ 分镜{shot_idx} 视频生成完成（{out.stat().st_size / 1048576:.1f}MB，耗时{time.time() - t0:.0f}s）")
         with LOCK:
             for s in TASKS[task_id]["shots"]:
