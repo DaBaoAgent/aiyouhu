@@ -4,3 +4,9 @@ scripts/.env
 *.bak
 __pycache__/
 *.pyc
+
+# WebUI
+webui/.venv/
+webui/data/
+webui/__pycache__/
+UI_审核_*.png

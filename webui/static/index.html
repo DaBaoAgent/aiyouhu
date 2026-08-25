@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>爱优护全自动视频生成工厂</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:#eef2f7;color:#0f172a;padding-bottom:80px}
+.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+header{background:#fff;border-bottom:1px solid #e2e8f0;padding:14px 0;position:sticky;top:0;z-index:50;box-shadow:0 1px 4px rgba(15,23,42,.04)}
+.header-inner{max-width:1100px;margin:0 auto;padding:0 20px;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700}
+.logo img{height:34px;width:34px;border-radius:8px;object-fit:cover}
+.logo .badge{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:11px;padding:3px 10px;border-radius:99px;font-weight:600}
+.btn-gear{display:flex;align-items:center;gap:6px;background:#f1f5f9;border:1px solid #e2e8f0;padding:8px 16px;border-radius:10px;cursor:pointer;font-size:14px;color:#334155;font-weight:600}
+.btn-gear:hover{background:#e2e8f0}
+.steps{display:flex;gap:8px;margin:22px 0;flex-wrap:wrap}
+.step{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:99px;padding:7px 14px;font-size:13px;color:#475569}
+.step .num{width:20px;height:20px;border-radius:50%;background:#2563eb;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(15,23,42,.04)}
+.card h3{font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.card .sub{font-size:12px;color:#94a3b8;margin-bottom:14px}
+.tag{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600}
+.tag-blue{background:#eff6ff;color:#1d4ed8}
+.tag-green{background:#ecfdf5;color:#047857}
+.tag-amber{background:#fffbeb;color:#b45309}
+.grid{display:grid;gap:12px}
+.grid-4{grid-template-columns:repeat(4,1fr)}
+.grid-5{grid-template-columns:repeat(5,1fr);gap:10px}
+.grid-5 .slot{aspect-ratio:3/4;border-radius:10px}
+.slot{aspect-ratio:4/3;border:2px dashed #cbd5e1;border-radius:12px;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;position:relative;overflow:hidden;transition:.15s}
+.slot:hover{border-color:#2563eb;background:#eff6ff}
+.slot.filled{border-style:solid;border-color:#e2e8f0;background:#fff}
+.slot img{width:100%;height:100%;object-fit:cover}
+.slot .idx{position:absolute;top:6px;left:6px;background:rgba(15,23,42,.65);color:#fff;font-size:10px;padding:2px 7px;border-radius:99px}
+.slot .del{position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:50%;background:rgba(239,68,68,.9);color:#fff;font-size:12px;line-height:20px;text-align:center;display:none;z-index:5}
+.slot.filled:hover .del{display:block}
+.slot .plus{font-size:26px;color:#94a3b8}
+.slot .lab{font-size:12px;color:#94a3b8;margin-top:6px}
+.slot.filled .role{position:absolute;bottom:0;left:0;right:0;background:rgba(15,23,42,.6);color:#fff;font-size:10px;text-align:center;padding:3px}
+.toolbar{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+select,.btn,.input{font-family:inherit;font-size:13px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;padding:9px 12px;color:#334155}
+select{min-width:190px}
+.btn{background:#f1f5f9;cursor:pointer;font-weight:600;padding:9px 16px}
+.btn:hover{background:#e2e8f0}
+.btn-primary{background:#2563eb;color:#fff;border:none}
+.btn-primary:hover{background:#1d4ed8}
+.btn-ai{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none}
+.btn-ai:hover{opacity:.9}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+textarea{width:100%;border:1px solid #e2e8f0;border-radius:12px;padding:12px;font-family:inherit;font-size:13px;line-height:1.7;min-height:150px;resize:vertical;color:#0f172a}
+textarea:focus{outline:2px solid #2563eb;border-color:transparent}
+.charcount{text-align:right;font-size:11px;color:#94a3b8;margin-top:4px}
+.switch-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.switch{width:46px;height:26px;border-radius:99px;background:#10b981;position:relative;cursor:pointer;transition:.2s}
+.switch::after{content:"";position:absolute;top:3px;left:23px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch.off{background:#cbd5e1}
+.switch.off::after{left:3px}
+.switch-lab{font-size:13px;font-weight:600}
+.hint{font-size:11px;color:#94a3b8}
+.row{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.row label{font-size:13px;color:#475569;min-width:60px}
+.voice-pick{display:flex;align-items:center;gap:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.voice-ava{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.voice-name{font-size:14px;font-weight:700}
+.voice-desc{font-size:11px;color:#94a3b8;word-break:break-all}
+.seg{display:flex;background:#f1f5f9;border-radius:12px;padding:4px;gap:4px}
+.seg button{border:none;background:transparent;padding:9px 18px;border-radius:9px;font-size:14px;cursor:pointer;color:#64748b;font-weight:600;font-family:inherit}
+.seg button.on{background:#fff;color:#1d4ed8;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg.big button{font-size:15px;padding:12px 24px}
+input[type=range]{flex:1;accent-color:#2563eb}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper button{width:30px;height:30px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;font-size:16px;cursor:pointer}
+.stepper .val{min-width:34px;text-align:center;font-weight:700}
+.fee{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;font-size:13px;padding:8px 14px;border-radius:10px;margin-top:10px;display:inline-block}
+.test-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.wave{flex:1;height:30px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;display:flex;align-items:center;gap:2px;padding:0 10px;overflow:hidden}
+.wave audio{width:100%;height:26px}
+.bgm-pick{display:flex;align-items:center;gap:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;margin-bottom:12px;flex-wrap:wrap}
+.bgm-file{flex:1;font-size:13px;color:#334155;min-width:150px}
+.btn-file{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:8px 14px;font-size:13px;cursor:pointer;font-family:inherit;color:#334155;font-weight:600}
+.btn-file:hover{background:#f1f5f9}
+.big-go{width:100%;border:none;border-radius:16px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:22px;font-weight:800;padding:20px;cursor:pointer;box-shadow:0 8px 24px rgba(37,99,235,.35);transition:.2s;letter-spacing:2px;margin-top:6px}
+.big-go:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(37,99,235,.45)}
+.big-go:disabled{opacity:.6;transform:none;cursor:not-allowed}
+.big-go small{display:block;font-size:12px;font-weight:400;letter-spacing:0;margin-top:4px;opacity:.85}
+.task{display:flex;align-items:center;gap:14px;border:1px solid #e2e8f0;border-radius:14px;padding:14px;margin-bottom:10px;background:#fff}
+.task .thumb{width:96px;height:64px;border-radius:8px;background:#0f172a;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;overflow:hidden}
+.task .thumb video{width:100%;height:100%;object-fit:cover}
+.task .info{flex:1;min-width:0}
+.task .name{font-size:14px;font-weight:700}
+.task .meta{font-size:11px;color:#94a3b8;margin-top:2px}
+.task .bar{height:6px;background:#e2e8f0;border-radius:99px;margin-top:8px;overflow:hidden}
+.task .bar i{display:block;height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed);border-radius:99px;transition:width .5s}
+.status{font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;flex-shrink:0}
+.st-run{background:#eff6ff;color:#1d4ed8}
+.st-ok{background:#ecfdf5;color:#047857}
+.st-fail{background:#fef2f2;color:#dc2626}
+.st-wait{background:#f1f5f9;color:#64748b}
+.mask{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;z-index:100}
+.mask.show{display:flex}
+.modal{background:#fff;border-radius:18px;padding:26px;width:520px;max-width:92vw}
+.modal h3{margin-bottom:16px}
+.modal .row{margin-bottom:12px}
+.modal input{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit}
+.modal .btns{display:flex;gap:10px;margin-top:18px}
+.modal .btns .btn{flex:1;text-align:center}
+.svc-line{font-size:12px;color:#475569;margin:6px 0}
+#toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 22px;border-radius:12px;font-size:14px;display:none;z-index:200;max-width:80vw}
+footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo"><img src="/static/logo.png" alt="logo"> 爱优护全自动视频生成工厂 <span class="badge">轻便侠 218</span></div>
+    <button class="btn-gear" id="btnSettings">⚙ API 设置</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="steps">
+    <div class="step"><span class="num">1</span> 上传参考图</div>
+    <div class="step"><span class="num">2</span> 分镜脚本</div>
+    <div class="step"><span class="num">3</span> 配音 &amp; 参数</div>
+    <div class="step"><span class="num">4</span> 开始生成</div>
+  </div>
+
+  <!-- ① 产品参考图 -->
+  <div class="card">
+    <h3>📦 产品参考图 <span class="tag tag-blue">最多 9 张 · 外观以此为准</span></h3>
+    <div class="sub">白底无人物图最佳。点击格子上传，悬停右上角删除，可拖动排序。</div>
+    <div class="grid grid-5" id="prodGrid"></div>
+  </div>
+
+  <!-- ② 模特参考图 -->
+  <div class="card">
+    <h3>👤 人物模特参考图 <span class="tag tag-green">可选 · 最多 4 张</span></h3>
+    <div class="sub">想固定人物长相/服装时可上传。不传则由 AI 按分镜脚本自由生成。</div>
+    <div class="grid grid-4" id="modelGrid"></div>
+  </div>
+
+  <!-- ③ 分镜脚本 -->
+  <div class="card">
+    <h3>🎬 分镜脚本 <span class="tag tag-blue">AI 生成 · 可自由修改</span></h3>
+    <div class="sub">每个分镜生成 1 条视频（单分镜时长秒），自动拼接成完整成片。</div>
+    <div class="toolbar">
+      <select id="selTemplate">
+        <option value="">模板：3分镜快节奏 v2（老爷爷·四大卖点）</option>
+        <option value="d">模板：版本D 洗脑版（反差+魔性循环）</option>
+        <option value="">留空，手动写</option>
+      </select>
+      <button class="btn btn-ai" id="btnAiStory">✨ AI 生成分镜</button>
+      <button class="btn" id="btnClearScript">🗑 清空</button>
+    </div>
+    <div class="row">
+      <label>分镜数量</label>
+      <div class="stepper">
+        <button id="btnShotMinus">−</button><span class="val" id="shotCount">6</span><button id="btnShotPlus">＋</button>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:#1d4ed8" id="shotInfo">6 分镜 × 10秒 = 60 秒成片</span>
+      <span class="hint">可选 1-10 个分镜</span>
+    </div>
+    <div class="row" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:10px 14px">
+      <label style="min-width:88px;font-weight:700;color:#166534">🤖 全智能</label>
+      <input type="range" min="1" max="200" value="1" id="aiCountSlider" style="flex:1">
+      <span class="val" id="aiCountVal" style="min-width:46px;font-size:14px;font-weight:700;color:#166534">1 条</span>
+      <span class="hint" style="flex-basis:100%;margin-top:6px">生成成片数量 1-200。每条=参考图→创意文案→配音→成片，AI 自动生成不重样创意文案。</span>
+    </div>
+    <textarea id="scriptText" placeholder="【分镜1】画面描述…
+【分镜2】画面描述…
+（或点击 ✨AI 生成分镜）"></textarea>
+    <div class="charcount" id="charCount">0 字</div>
+  </div>
+
+  <!-- ④ 配音 -->
+  <div class="card">
+    <h3>🎙 配音 <span class="tag tag-green">本机 GPT-SoVITS</span></h3>
+    <div class="sub">免费本地音色克隆。上传一段 3-10 秒参考音频即可克隆音色。</div>
+    <div class="switch-row">
+      <div class="switch" id="voiceSwitch"></div>
+      <span class="switch-lab">开启配音</span>
+      <span class="hint">关闭则只出视频（适合主图视频）</span>
+    </div>
+    <div id="voicePanel" style="display:none">
+      <div class="voice-pick">
+        <div class="voice-ava">声</div>
+        <div style="flex:1">
+          <div class="voice-name" id="voicePickName">未选择音色</div>
+          <div class="voice-desc" id="voicePickDesc">先上传克隆音色或选择已有音色</div>
+        </div>
+        <select id="voiceSelect" style="min-width:160px"></select>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" id="btnCloneVoice">📁 上传克隆音色</button>
+        <span class="hint">支持 mp3/wav · 自动裁剪 3-10 秒 · 自动识别文本</span>
+      </div>
+      <div class="row">
+        <label>文案</label>
+        <textarea id="dubText" style="min-height:64px;flex:1" placeholder="配音口播文案（约每分镜30字）。可点击 ✨AI生成分镜 自动填写。"></textarea>
+      </div>
+      <div class="test-row">
+        <button class="btn btn-primary" id="btnTtsTest">🔊 试听配音</button>
+        <span class="hint">用文案前 10 个字生成试听</span>
+        <div class="wave" id="ttsWave" style="display:none"><audio id="ttsAudio" controls style="width:100%"></audio></div>
+      </div>
+      <div class="row">
+        <label>语速</label>
+        <input type="range" min="0.7" max="1.3" step="0.05" value="1.0" id="speedSlider"><span style="font-size:12px;min-width:44px" id="speedVal">1.00×</span>
+      </div>
+      <div class="row">
+        <label>音量</label>
+        <input type="range" min="0" max="100" value="90" id="voiceVolSlider"><span style="font-size:12px;min-width:44px" id="voiceVolVal">90%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🎵 BGM -->
+  <div class="card">
+    <h3>🎵 背景音乐 BGM <span class="tag tag-green">可选</span></h3>
+    <div class="sub">上传自己的 BGM，或从内置曲库选用。默认音量 30%，不抢配音。</div>
+    <div class="row">
+      <label>方式</label>
+      <div class="seg" id="bgmModeSeg">
+        <button data-mode="none" class="on">📴 无 BGM</button>
+        <button data-mode="upload">📤 上传</button>
+        <button data-mode="library">⬇️ 曲库</button>
+      </div>
+    </div>
+    <div id="bgmUploadRow" class="bgm-pick" style="display:none">
+      <button class="btn-file" id="btnBgmUpload">📁 选择 BGM 文件</button>
+      <span class="bgm-file" id="bgmFileName">未选择</span>
+    </div>
+    <div id="bgmLibraryRow" class="row" style="display:none">
+      <label>曲库</label>
+      <select id="bgmSelect" style="flex:1"></select>
+      <span class="hint" id="bgmLibHint"></span>
+    </div>
+    <div class="row">
+      <label>音量</label>
+      <input type="range" min="0" max="100" value="30" id="bgmVolSlider"><span style="font-size:12px;min-width:44px" id="bgmVolVal">30%</span>
+    </div>
+  </div>
+
+  <!-- ⑤ 视频参数 -->
+  <div class="card">
+    <h3>🎥 视频生成参数 <span class="tag tag-blue">H3 云端生成</span></h3>
+    <div class="sub">所有参数都有默认值，直接点开始也能出片。</div>
+    <div class="row">
+      <label>画面</label>
+      <div class="seg big" id="segOrient">
+        <button data-v="竖" class="on">📱 竖屏</button>
+        <button data-v="横">🖥 横屏</button>
+      </div>
+      <span class="hint">主图/抖音/小红书选竖屏，B站/YouTube选横屏</span>
+    </div>
+    <div class="row">
+      <label>清晰度</label>
+      <div class="seg" id="segRes">
+        <button data-r="480p">480p</button>
+        <button data-r="768p">768p</button>
+        <button data-r="1080p" class="on">1080p</button>
+      </div>
+      <span class="hint">¥0.04/s · ¥0.06/s · ¥0.10/s</span>
+    </div>
+    <div class="row">
+      <label>工作流</label>
+      <select id="selWorkflow" style="flex:1">
+        <option value="multi_image">多图参考生成（产品图+模特图，推荐）</option>
+        <option value="text2video">文生视频（不用参考图）</option>
+        <option value="first_last">首尾帧（指定开始/结束画面）</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>单分镜时长</label>
+      <input type="range" min="5" max="10" value="10" id="durSlider"><span style="font-size:12px;min-width:44px" id="durVal">10 秒</span>
+    </div>
+    <div class="row">
+      <label>并发数</label>
+      <div class="stepper">
+        <button id="btnConcMinus">−</button><span class="val" id="concVal">1</span><button id="btnConcPlus">＋</button>
+      </div>
+      <span class="hint">多个视频同时生成，10 并发约 1 小时出 49 条 10秒视频</span>
+    </div>
+    <div class="row">
+      <label>命名</label>
+      <input class="input" id="nameInput" style="flex:1" value="轻便侠218_成片">
+    </div>
+    <div class="fee" id="feeEst">💰 预估费用：—</div>
+  </div>
+
+  <!-- ⑥ 开始生成 -->
+  <button class="big-go" id="btnGo">🚀 开始生成
+    <small>检查参考图与脚本后一键提交 · 生成中请勿关闭页面</small>
+  </button>
+
+  <!-- ⑦ 任务与成片 -->
+  <div class="card" style="margin-top:18px">
+    <h3>📺 任务与成片 <span class="tag tag-green">完成自动播放</span></h3>
+    <div class="sub" style="margin-bottom:14px">生成中的任务实时显示进度，完成后可点击播放预览。</div>
+    <div id="taskList"><div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px">暂无任务，点击上方「🚀 开始生成」</div></div>
+  </div>
+
+  <footer>爱优护全自动视频生成工厂 · AutoDL.Art MiniMax H3 · 配音 GPT-SoVITS · v0.1</footer>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3>⚙ API 设置</h3>
+    <div class="row">
+      <label style="min-width:100px">AUTODL Key</label>
+      <input type="password" id="inpAutodl" placeholder="autodl.art 令牌（分组选 ComfyUI）">
+    </div>
+    <div class="row">
+      <label style="min-width:100px">DeepSeek Key</label>
+      <input type="password" id="inpDeepseek" placeholder="AI 生成分镜用（留空用系统默认）">
+    </div>
+    <div class="row">
+      <label style="min-width:100px">GPT-SoVITS</label>
+      <input id="inpSovits" value="" style="font-size:12px">
+    </div>
+    <div class="row">
+      <label style="min-width:100px">端口</label>
+      <input id="inpPort" value="9880" style="width:90px">
+      <button class="btn" id="btnStartTts" style="padding:9px 12px">▶ 启动服务</button>
+    </div>
+    <div class="svc-line" id="svcStatus">服务状态：检测中…</div>
+    <div class="btns">
+      <button class="btn btn-primary" id="btnSaveSettings">💾 保存设置</button>
+      <button class="btn" id="btnCloseSettings">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="fileInput" style="display:none" accept="image/*,audio/*">
+
+<script src="/static/app.js"></script>
+</body>
+</html>
