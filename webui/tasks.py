@@ -26,12 +26,33 @@ TASK_SEM = threading.Semaphore(3)  # 批量任务级并发信号量（同时最�
 TASKS_FILE = Path(__file__).resolve().parent / "data" / "tasks.json"
 
 
-def _save():
+_save_timer = None
+
+
+def _do_save():
+    """真正写盘（节流 Timer 回调）"""
+    global _save_timer
     with LOCK:
         try:
             TASKS_FILE.write_text(json.dumps(TASKS, ensure_ascii=False, indent=1), encoding="utf-8")
         except OSError:
             pass
+        _save_timer = None
+
+
+def _save(force: bool = False):
+    """节流保存：1 秒内多次变更合并为一次写盘；force=True 立即写（任务结束/关键状态）"""
+    global _save_timer
+    with LOCK:
+        if force:
+            if _save_timer:
+                _save_timer.cancel()
+                _save_timer = None
+            _do_save()
+        elif _save_timer is None:
+            _save_timer = threading.Timer(1.0, _do_save)
+            _save_timer.daemon = True
+            _save_timer.start()
 
 
 def _load():
@@ -61,7 +82,7 @@ def mark_stale_failed():
             if t.get("status") in ("queued", "running"):
                 t.update(status="failed", stage="失败",
                          error="服务重启中断，任务未完成", finished_at=time.strftime("%H:%M:%S"))
-        _save()
+        _save(force=True)
 
 
 def _update(task_id: str, **kw):
@@ -365,13 +386,17 @@ def _run_film(task_id: str, card: dict, params: dict):
     except Exception as e:
         _update(task_id, status="failed", stage="失败", error=str(e), finished_at=time.strftime("%H:%M:%S"))
         _log(task_id, f"❌ 任务失败: {e}")
-    _save()
+    _save(force=True)
 
 
 def _submit_task(name: str, params: dict, card: dict) -> str:
     tid = uuid.uuid4().hex[:10]
     name = sanitize_name(name)
-    duration_s = len(card.get("shots") or parse_script(card.get("script_text", ""), 99)) * int(params.get("duration", 10))
+    # 估算成片时长：AI 批量模式 card 无 shots 时按 num_shots 估算
+    est_shots = len(card.get("shots") or parse_script(card.get("script_text", ""), 99))
+    if not est_shots:
+        est_shots = int(params.get("num_shots", 6))
+    duration_s = est_shots * int(params.get("duration", 10))
     with LOCK:
         TASKS[tid] = {
             "id": tid, "name": name, "type": params.get("type", "manual"),
@@ -383,7 +408,7 @@ def _submit_task(name: str, params: dict, card: dict) -> str:
             "angle": card.get("angle", ""),
             "output_dir": (params.get("output_dir") or "").strip(),
         }
-        _save()
+        _save(force=True)
     return tid
 
 
@@ -440,7 +465,8 @@ def submit_ai(params: dict, count: int) -> list[str]:
                 continue
             with LOCK:
                 TASKS[tid]["angle"] = card["angle"]
-                _save()
+                TASKS[tid]["duration_s"] = len(card.get("shots") or []) * int(params.get("duration", 10))
+                _save(force=True)
             _run_film(tid, card, params)
 
     threading.Thread(target=coordinator, daemon=True).start()
