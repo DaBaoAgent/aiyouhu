@@ -125,10 +125,9 @@ def tts_test(body: dict):
     if not voice:
         raise HTTPException(400, "音色不存在，请先上传/选择音色")
     if not tts_client.service_status()["running"]:
-        tts_client.start_service()
+        raise HTTPException(500, "配音引擎不可用（需联网）")
     try:
-        wav = tts_client._tts_sync(text, voice["ref_audio"], voice["prompt_text"],
-                                   float(body.get("speed", 1.0)))
+        wav = tts_client._tts_sync(text, voice, float(body.get("speed", 1.0)))
         return {"url": f"/files/tts/{wav.name}", "text": text, "file": str(wav)}
     except RuntimeError as e:
         raise HTTPException(500, str(e))
@@ -144,19 +143,8 @@ def list_voices():
 @app.post("/api/voices")
 async def clone_voice(file: UploadFile = File(...), name: str = Form("新音色"),
                       prompt_text: str = Form("")):
-    ext = Path(file.filename or "x").suffix.lower()
-    if ext not in ALLOWED_AUDIO:
-        raise HTTPException(400, f"仅支持音频格式: {ALLOWED_AUDIO}")
-    tmp = UPLOAD_DIR / f"clone_{uuid.uuid4().hex[:8]}{ext}"
-    with tmp.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    try:
-        card = tts_client.clone_voice(tmp, name, prompt_text)
-        return {"ok": True, "voice": card}
-    except RuntimeError as e:
-        raise HTTPException(500, str(e))
-    finally:
-        tmp.unlink(missing_ok=True)
+    """已切换 edge-tts（免费内置音色），不再支持上传克隆"""
+    raise HTTPException(400, "配音引擎已切换为免费 edge-tts，请直接在下拉框选择内置音色")
 
 
 # ---------- BGM 曲库 ----------

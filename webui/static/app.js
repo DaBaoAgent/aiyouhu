@@ -194,10 +194,10 @@ async function loadVoices() {
       sel.value = state.voices[0].id;
       state.voiceId = state.voices[0].id;
       $("voicePickName").textContent = state.voices[0].name;
-      $("voicePickDesc").textContent = state.voices[0].prompt_text.slice(0, 30) + "…";
+      $("voicePickDesc").textContent = state.voices[0].desc || "";
     } else {
       $("voicePickName").textContent = "暂无音色";
-      $("voicePickDesc").textContent = "点击「上传克隆音色」创建第一个音色";
+      $("voicePickDesc").textContent = "请检查网络后刷新";
     }
   } catch (err) { toast("加载音色失败: " + err.message); }
 }
@@ -206,33 +206,15 @@ $("voiceSelect").addEventListener("change", (e) => {
   if (v) {
     state.voiceId = v.id;
     $("voicePickName").textContent = v.name;
-    $("voicePickDesc").textContent = v.prompt_text.slice(0, 30) + "…";
+    $("voicePickDesc").textContent = v.desc || "";
   }
 });
-$("btnCloneVoice").addEventListener("click", () => {
-  uploadCtx = null; pendingAction = "clone";
-  const fi = $("fileInput");
-  fi.accept = "audio/*"; fi.value = ""; fi.click();
-});
-// 复用 fileInput：克隆音色
+// 复用 fileInput：BGM 上传
 $("fileInput").addEventListener("change", async (e) => {
   const f = e.target.files[0];
   if (!f || uploadCtx || !pendingAction) return;
   const action = pendingAction; pendingAction = null;
-  if (action === "clone") {
-    const name = prompt("给这个音色起个名字：", f.name.replace(/\.[^.]+$/, ""));
-    if (!name) return;
-    const fd = new FormData();
-    fd.append("file", f);
-    fd.append("name", name);
-    try {
-      const res = await api("/api/voices", { method: "POST", body: fd });
-      toast("音色克隆成功：" + res.voice.name);
-      await loadVoices();
-    } catch (err) {
-      toast("音色克隆失败: " + err.message);
-    }
-  } else if (action === "bgm") {
+  if (action === "bgm") {
     const fd = new FormData();
     fd.append("file", f);
     fd.append("kind", "bgm");
@@ -421,8 +403,6 @@ $("btnSettings").onclick = async () => {
     const s = await api("/api/settings");
     $("inpAutodl").placeholder = s.autodl_key_set ? `已设置（${s.autodl_key}）` : "未设置，请输入 autodl.art 令牌";
     $("inpDeepseek").placeholder = s.deepseek_key_set ? `已设置（${s.deepseek_key}）` : "未设置（AI 分镜不可用）";
-    $("inpSovits").value = s.gpt_sovits_root;
-    $("inpPort").value = s.gpt_sovits_port;
     refreshTtsStatus();
   } catch (err) { toast("读取设置失败: " + err.message); }
 };
@@ -441,19 +421,10 @@ async function refreshTtsStatus() {
   try {
     const s = await api("/api/tts/status");
     $("svcStatus").innerHTML = s.running
-      ? `服务状态：<b style="color:#10b981">● 运行中</b>（端口 ${s.port}）`
-      : `服务状态：<b style="color:#dc2626">● 未运行</b>（点击「启动服务」，模型加载约需 30-120 秒）`;
+      ? `服务状态：<b style="color:#10b981">● ${s.provider || "edge-tts"} 就绪</b>（免费在线，无需本地服务）`
+      : `服务状态：<b style="color:#dc2626">● 不可用</b>`;
   } catch { $("svcStatus").textContent = "服务状态：无法检测"; }
 }
-$("btnStartTts").onclick = async () => {
-  $("btnStartTts").disabled = true; $("btnStartTts").textContent = "⏳ 启动中…";
-  try {
-    const s = await api("/api/tts/start", { method: "POST" });
-    if (s.running) { toast("GPT-SoVITS 服务已就绪"); refreshTtsStatus(); }
-    else toast("启动中/失败: " + (s.error || "模型加载中，稍后刷新查看"));
-  } catch (err) { toast("启动失败: " + err.message); }
-  finally { $("btnStartTts").disabled = false; $("btnStartTts").textContent = "▶ 启动服务"; }
-};
 
 // ---------- 初始化 ----------
 buildGrids();

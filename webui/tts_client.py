@@ -1,165 +1,165 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""GPT-SoVITS 本地配音服务：服务管理 / 音色克隆 / 试听 / 批量配音"""
-import json
-import os
+"""edge-tts 免费配音模块(替代本地 GPT-SoVITS): 音色列表 / 试听 / 分段配音
+
+- 微软神经语音, 免费在线合成, 无需本地服务/显卡/模型
+- 语速用 rate 参数(纯变速不变调), 音量在混流阶段用 ffmpeg 控制
+- 直连失败自动走本机 VPN 代理(127.0.0.1:15715)重试
+"""
+import asyncio
 import re
-import socket
 import subprocess
-import sys
-import time
-import urllib.parse
 import uuid
 from pathlib import Path
 
-import requests
+import edge_tts
 
-from config import (GPT_SOVITS_ROOT, GPT_SOVITS_VENV_PY, GPT_SOVITS_PORT,
-                    TTS_DIR, UPLOAD_DIR, VOICES_DIR)
+from config import FFMPEG, TTS_DIR
 
-ASR_SCRIPT = r'''# -*- coding: utf-8 -*-
-import os, sys, json
-# 中文路径在 sentencepiece C++ 层打不开，用 junction 的 ASCII 路径
-os.environ["MODELSCOPE_CACHE"] = r"D:\modelscope_cache"
-from funasr import AutoModel
-audio, lang = sys.argv[1], sys.argv[2]
-m = AutoModel(model="iic/SenseVoiceSmall", trust_remote_code=True, device="cuda:0")
-r = m.generate(input=audio, language=lang, use_itn=True)
-import re as _re
-text = _re.sub(r"<[^>]*>", "", r[0]["text"]).strip()
-print(json.dumps({"text": text}, ensure_ascii=False))
-'''
+# 微软神经语音(中文) - 免费在线 TTS
+EDGE_VOICES = [
+    {"id": "zh-CN-YunyangNeural", "name": "云扬·男(新闻解说)", "gender": "男", "desc": "沉稳大气，纪录片/宣传片解说首选"},
+    {"id": "zh-CN-YunjianNeural", "name": "云健·男(浑厚)", "gender": "男", "desc": "浑厚有力，大气宣传"},
+    {"id": "zh-CN-YunxiNeural", "name": "云希·男(年轻)", "gender": "男", "desc": "阳光活力，年轻感"},
+    {"id": "zh-CN-YunxiaNeural", "name": "云夏·男(少年)", "gender": "男", "desc": "清爽少年音"},
+    {"id": "zh-CN-YunfengNeural", "name": "云枫·男(轻松)", "gender": "男", "desc": "轻松亲和"},
+    {"id": "zh-CN-XiaoxiaoNeural", "name": "晓晓·女(通用)", "gender": "女", "desc": "温柔亲切，最常用女声"},
+    {"id": "zh-CN-XiaoyiNeural", "name": "晓伊·女(活泼)", "gender": "女", "desc": "甜美活泼"},
+    {"id": "zh-CN-XiaohanNeural", "name": "晓涵·女(温暖)", "gender": "女", "desc": "温暖治愈"},
+    {"id": "zh-CN-XiaomoNeural", "name": "晓墨·女(柔和)", "gender": "女", "desc": "柔和知性"},
+    {"id": "zh-CN-XiaoruiNeural", "name": "晓睿·女(成熟)", "gender": "女", "desc": "成熟稳重"},
+    {"id": "zh-CN-XiaozhenNeural", "name": "晓甄·女(电台)", "gender": "女", "desc": "电台播音感"},
+]
+
+PROXY = "http://127.0.0.1:15715"  # 本机 VPN 代理(直连失败时兜底)
+
+# ---------- 数字转中文读法(配音准确) ----------
+# 型号/编号逐位读: 218 → 二幺八; 带单位数值读: 39公里 → 三十九公里
+_CN = "零一二三四五六七八九"
+_DIGIT_SPOKEN = {"0": "零", "1": "幺", "2": "二", "3": "三", "4": "四",
+                 "5": "五", "6": "六", "7": "七", "8": "八", "9": "九"}
+_UNIT_MAP = {
+    # 字母单位(长词优先匹配)
+    "km": "公里", "kg": "公斤", "Ah": "安时", "Hz": "赫兹", "mA": "毫安",
+    "m": "米", "W": "瓦", "V": "伏", "A": "安", "h": "小时", "min": "分钟", "s": "秒",
+    # 中文单位
+    "公里": "公里", "千米": "千米", "公斤": "公斤", "千克": "千克", "斤": "斤",
+    "克": "克", "吨": "吨", "米": "米", "厘米": "厘米", "毫米": "毫米",
+    "寸": "寸", "英寸": "英寸", "毫升": "毫升", "升": "升", "度": "度",
+    "伏": "伏", "瓦": "瓦", "安": "安", "毫安": "毫安", "赫兹": "赫兹",
+    "分钟": "分钟", "小时": "小时", "秒": "秒", "档": "档",
+}
+_UNIT_ALT = "|".join(sorted(_UNIT_MAP.keys(), key=len, reverse=True))
+_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+_DEG_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[°度]")
+_UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(" + _UNIT_ALT + ")")
+_RAW_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 
 
-def _port_open(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1):
-            return True
-    except OSError:
-        return False
+def _int_to_cn(n: int) -> str:
+    """整数 0-999999 转中文读数: 15→十五, 39→三十九, 218→二百一十八"""
+    if n == 0:
+        return "零"
+    if n < 0:
+        return "负" + _int_to_cn(-n)
+    if n >= 10000:
+        w, r = divmod(n, 10000)
+        tail = "" if r == 0 else ("零" + _int_to_cn(r) if r < 1000 else _int_to_cn(r))
+        return _int_to_cn(w) + "万" + tail
+    units = ["", "十", "百", "千"]
+    out, s = "", str(n)
+    for i, ch in enumerate(s):
+        d = int(ch)
+        pos = len(s) - 1 - i
+        if d == 0:
+            if out and not out.endswith("零"):
+                out += "零"
+        elif d == 1 and pos == 1 and len(s) == 2:
+            out += "十"  # 10-19: 十五、十八, 不读"一十五"
+        else:
+            out += _CN[d] + units[pos]
+    return out.rstrip("零")
+
+
+def _num_value_cn(s: str) -> str:
+    """数值读法(带单位): 15→十五, 13.8→十三点八"""
+    if "." in s:
+        a, b = s.split(".", 1)
+        r = _int_to_cn(int(a)) if a else "零"
+        return r + "点" + "".join(_CN[int(c)] for c in b)
+    return _int_to_cn(int(s))
+
+
+def _digit_cn(s: str) -> str:
+    """型号/编号逐位读: 218→二幺八, 3.0→三点零"""
+    if "." in s:
+        a, b = s.split(".", 1)
+        return _digit_cn(a) + "点" + "".join(_DIGIT_SPOKEN.get(c, c) for c in b)
+    return "".join(_DIGIT_SPOKEN.get(c, c) for c in s)
+
+
+def normalize_text(text: str) -> str:
+    """数字转中文读法, 保证配音准确(幂等):
+    - 30% → 百分之三十; 30° → 三十度
+    - 带单位 → 数值读法: 15米→十五米, 39公里→三十九公里, 13.8公斤→十三点八公斤, 400W→四百瓦
+    - 裸数字 → 型号逐位读: 218→二幺八, F2Q→F二Q
+    """
+    if not text:
+        return text
+    text = _PCT_RE.sub(lambda m: "百分之" + _num_value_cn(m.group(1)), text)
+    text = _DEG_RE.sub(lambda m: _num_value_cn(m.group(1)) + "度", text)
+    text = _UNIT_RE.sub(lambda m: _num_value_cn(m.group(1)) + _UNIT_MAP[m.group(2)], text)
+    text = _RAW_NUM_RE.sub(lambda m: _digit_cn(m.group(0)), text)
+    return text
 
 
 def service_status() -> dict:
-    up = _port_open(GPT_SOVITS_PORT)
-    return {"running": up, "port": GPT_SOVITS_PORT, "root": str(GPT_SOVITS_ROOT)}
+    """edge-tts 无需本地服务, 恒可用(依赖联网)"""
+    return {"running": True, "provider": "edge-tts", "port": None, "root": ""}
 
 
 def start_service() -> dict:
-    """拉起 api_v2.py 后台服务（幂等：已运行则直接返回）"""
-    if _port_open(GPT_SOVITS_PORT):
-        return service_status()
-    if not GPT_SOVITS_VENV_PY.exists():
-        return {"running": False, "error": f"venv 不存在: {GPT_SOVITS_VENV_PY}"}
-    log = UPLOAD_DIR / "gptsovits.log"
-    cmd = [
-        str(GPT_SOVITS_VENV_PY), "api_v2.py",
-        "-a", "127.0.0.1", "-p", str(GPT_SOVITS_PORT),
-        "-c", "GPT_SoVITS/configs/tts_infer.yaml",
-    ]
-    try:
-        subprocess.Popen(cmd, cwd=str(GPT_SOVITS_ROOT),
-                         stdout=open(log, "w"), stderr=subprocess.STDOUT,
-                         creationflags=0x00000008)  # DETACHED_PROCESS
-    except Exception as e:
-        return {"running": False, "error": str(e)}
-    # 等待就绪（模型加载可能 30-120s）
-    for _ in range(60):
-        if _port_open(GPT_SOVITS_PORT):
-            return {"running": True, "port": GPT_SOVITS_PORT}
-        time.sleep(2)
-    return {"running": False, "error": "服务启动超时（模型加载中？），查看 logs: " + str(log)}
-
-
-def _tts_sync(text: str, ref_audio: str, prompt_text: str, speed: float = 1.0,
-              out_path: Path = None) -> Path:
-    """调本地 /tts 接口合成一段音频"""
-    out_path = out_path or (TTS_DIR / f"tts_{uuid.uuid4().hex[:8]}.wav")
-    params = {
-        "text": text, "text_lang": "zh",
-        "ref_audio_path": ref_audio,
-        "prompt_lang": "zh", "prompt_text": prompt_text,
-        "text_split_method": "cut5", "batch_size": 1,
-        "media_type": "wav", "streaming_mode": "false",
-        "speed_factor": speed,
-    }
-    url = f"http://127.0.0.1:{GPT_SOVITS_PORT}/tts?" + urllib.parse.urlencode(params)
-    try:
-        resp = requests.get(url, timeout=600)
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError("GPT-SoVITS 服务未运行，请在设置中点击启动")
-    if resp.status_code != 200:
-        raise RuntimeError(f"TTS 失败 HTTP {resp.status_code}: {resp.text[:300]}")
-    if len(resp.content) < 200:
-        raise RuntimeError(f"TTS 返回为空/异常: {resp.text[:300]}")
-    out_path.write_bytes(resp.content)
-    return out_path
-
-
-# ---------- 音色克隆 ----------
-
-def asr_prompt_text(audio_path: Path) -> str:
-    """用 GPT-SoVITS venv 的 SenseVoiceSmall 识别参考文本（子进程隔离）"""
-    script = UPLOAD_DIR / "_asr_tmp.py"
-    script.write_text(ASR_SCRIPT, encoding="utf-8")
-    try:
-        r = subprocess.run(
-            [str(GPT_SOVITS_VENV_PY), str(script), str(audio_path), "zh"],
-            capture_output=True, text=True, timeout=600, encoding="utf-8",
-        )
-        if r.returncode != 0:
-            raise RuntimeError(f"ASR 失败: {r.stderr[-300:]}")
-        return json.loads(r.stdout.strip().splitlines()[-1])["text"]
-    finally:
-        script.unlink(missing_ok=True)
-
-
-def _trim_to_10s(audio_path: Path) -> Path:
-    """裁剪参考音频为 3-10 秒（GPT-SoVITS 硬限制），返回 wav"""
-    from config import FFMPEG
-    out = UPLOAD_DIR / f"ref_{uuid.uuid4().hex[:8]}.wav"
-    subprocess.run(
-        [str(FFMPEG), "-y", "-i", str(audio_path), "-t", "10", "-ac", "1",
-         "-ar", "24000", str(out)],
-        capture_output=True, check=True)
-    return out
-
-
-def clone_voice(audio_path: Path, name: str, prompt_text: str = "") -> dict:
-    """上传克隆音色：裁剪 3-10s → ASR → 存音色卡"""
-    name = re.sub(r'[<>:"/\\|?*]', "_", name).strip() or f"音色{uuid.uuid4().hex[:4]}"
-    vdir = VOICES_DIR / name
-    vdir.mkdir(parents=True, exist_ok=True)
-    ref = _trim_to_10s(audio_path)
-    if not prompt_text.strip():
-        prompt_text = asr_prompt_text(ref)
-    voice_id = uuid.uuid4().hex[:10]
-    card = {
-        "id": voice_id, "name": name,
-        "ref_audio": str(ref), "prompt_text": prompt_text,
-        "created": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    (vdir / "voice.json").write_text(json.dumps(card, ensure_ascii=False, indent=2), encoding="utf-8")
-    # 也存一份快捷引用：ref.wav
-    (vdir / "ref.wav").write_bytes(ref.read_bytes())
-    return card
+    return service_status()
 
 
 def list_voices() -> list[dict]:
-    voices = []
-    for d in sorted(VOICES_DIR.iterdir()):
-        f = d / "voice.json"
-        if f.exists():
-            try:
-                voices.append(json.loads(f.read_text(encoding="utf-8")))
-            except (json.JSONDecodeError, OSError):
-                continue
-    return voices
+    return [dict(v) for v in EDGE_VOICES]
 
 
-# ---------- 配音 ----------
+def _rate_from_speed(speed: float) -> str:
+    """语速 0.7-1.3 → edge-tts rate 百分比(纯变速不变调)"""
+    pct = int(round((speed - 1.0) * 100))
+    pct = max(-50, min(50, pct))
+    return f"{pct:+d}%"
+
+
+def _tts_sync(text: str, voice: dict, speed: float = 1.0,
+              out_path: Path = None) -> Path:
+    """edge-tts 合成一段音频(mp3), 返回路径。直连失败自动走代理重试"""
+    out_path = out_path or (TTS_DIR / f"tts_{uuid.uuid4().hex[:8]}.mp3")
+    text = normalize_text(text)  # 数字转中文读法(型号218→二幺八, 39公里→三十九公里)
+    rate = _rate_from_speed(speed)
+
+    async def _run(proxy: str | None = None):
+        com = edge_tts.Communicate(text, voice["id"], rate=rate, proxy=proxy)
+        await com.save(str(out_path))
+
+    try:
+        asyncio.run(_run())
+    except Exception:
+        # 直连失败 → 走本机 VPN 代理重试一次
+        try:
+            asyncio.run(_run(proxy=PROXY))
+        except Exception as e:
+            raise RuntimeError(f"edge-tts 合成失败(直连与代理均失败): {e}")
+    if not out_path.exists() or out_path.stat().st_size < 200:
+        raise RuntimeError("edge-tts 返回为空，请检查网络后重试")
+    return out_path
+
 
 def split_text(text: str, max_chars: int = 180) -> list[str]:
-    """按句切分，长句按 max_chars 硬切（对齐 GPT-SoVITS 稳定性）"""
+    """按句切分，长句按 max_chars 硬切（每段独立合成，保证稳定性）"""
+    import re
     text = re.sub(r"\s+", "", text)
     sentences = [s for s in re.split(r"(?<=[。！？!?；;])", text) if s]
     chunks, cur = [], ""
@@ -179,20 +179,30 @@ def split_text(text: str, max_chars: int = 180) -> list[str]:
 
 
 def dub_text(text: str, voice: dict, speed: float = 1.0, tag: str = "dub") -> Path:
-    """整段文案配音：分段合成 → 拼接 → 返回 wav 路径"""
+    """整段文案配音：分段 edge-tts 合成 → 拼接 → 返回 wav 路径"""
     segs = split_text(text)
     if not segs:
         raise RuntimeError("配音文案为空")
     parts = []
     for i, seg in enumerate(segs):
-        p = TTS_DIR / f"{tag}_{i:02d}.wav"
-        _tts_sync(seg, voice["ref_audio"], voice["prompt_text"], speed, p)
+        p = TTS_DIR / f"{tag}_{i:02d}.mp3"
+        _tts_sync(seg, voice, speed, p)
         parts.append(p)
     out = TTS_DIR / f"{tag}_full.wav"
-    from config import FFMPEG
-    concat = TTS_DIR / f"{tag}_list.txt"
-    concat.write_text("\n".join(f"file '{p.as_posix()}'" for p in parts), encoding="utf-8")
-    subprocess.run([str(FFMPEG), "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
-                    "-c:a", "pcm_s16le", str(out)], capture_output=True, check=True)
-    concat.unlink(missing_ok=True)
+    if len(parts) == 1:
+        subprocess.run(
+            [str(FFMPEG), "-y", "-i", str(parts[0]), "-ac", "1", "-ar", "24000",
+             "-c:a", "pcm_s16le", str(out)],
+            capture_output=True, check=True)
+    else:
+        inputs = []
+        for p in parts:
+            inputs += ["-i", str(p)]
+        flt = "".join(f"[{i}:a]" for i in range(len(parts))) + \
+            f"concat=n={len(parts)}:v=0:a=1[a]"
+        subprocess.run(
+            [str(FFMPEG), "-y"] + inputs +
+            ["-filter_complex", flt, "-map", "[a]", "-ac", "1", "-ar", "24000",
+             "-c:a", "pcm_s16le", str(out)],
+            capture_output=True, check=True)
     return out

@@ -195,8 +195,8 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
 
   <!-- ④ 配音 -->
   <div class="card">
-    <h3>🎙 配音 <span class="tag tag-green">本机 GPT-SoVITS</span></h3>
-    <div class="sub">免费本地音色克隆。上传一段 3-10 秒参考音频即可克隆音色。</div>
+    <h3>🎙 配音 <span class="tag tag-green">免费 edge-tts</span></h3>
+    <div class="sub">微软神经语音免费在线合成（无需本地服务/显卡），选择音色即可，语速纯变速不变调。</div>
     <div class="switch-row">
       <div class="switch" id="voiceSwitch"></div>
       <span class="switch-lab">开启配音</span>
@@ -210,10 +210,6 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
           <div class="voice-desc" id="voicePickDesc">先上传克隆音色或选择已有音色</div>
         </div>
         <select id="voiceSelect" style="min-width:160px"></select>
-      </div>
-      <div class="row">
-        <button class="btn btn-primary" id="btnCloneVoice">📁 上传克隆音色</button>
-        <span class="hint">支持 mp3/wav · 自动裁剪 3-10 秒 · 自动识别文本</span>
       </div>
       <div class="row">
         <label>文案</label>
@@ -330,7 +326,7 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
     </div>
   </div>
 
-  <footer>爱优护全自动视频生成工厂 · AutoDL.Art MiniMax H3 · 配音 GPT-SoVITS · v0.2</footer>
+  <footer>爱优护全自动视频生成工厂 · AutoDL.Art MiniMax H3 · 配音 edge-tts · v0.2</footer>
 </div>
 
 <!-- 设置弹窗 -->
@@ -346,13 +342,8 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
       <input type="password" id="inpDeepseek" placeholder="AI 生成分镜用（留空用系统默认）">
     </div>
     <div class="row">
-      <label style="min-width:100px">GPT-SoVITS</label>
-      <input id="inpSovits" value="" style="font-size:12px">
-    </div>
-    <div class="row">
-      <label style="min-width:100px">端口</label>
-      <input id="inpPort" value="9880" style="width:90px">
-      <button class="btn" id="btnStartTts" style="padding:9px 12px">▶ 启动服务</button>
+      <label style="min-width:100px">配音引擎</label>
+      <span style="flex:1;font-size:13px;color:#64748b;padding:8px 0">edge-tts（免费在线，无需配置）</span>
     </div>
     <div class="svc-line" id="svcStatus">服务状态：检测中…</div>
     <div class="btns">
