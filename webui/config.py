@@ -24,9 +24,6 @@ for d in (REFS_DIR, VOICES_DIR, TTS_DIR, OUTPUTS_DIR, BGM_DIR, UPLOAD_DIR):
 
 # 外部工具
 FFMPEG = Path(r"D:\@佳康顺矩阵\@工具\ffmpeg\ffmpeg.exe")
-GPT_SOVITS_ROOT = Path(r"D:\@佳康顺矩阵\@工具\GPT-SoVITS")
-GPT_SOVITS_VENV_PY = GPT_SOVITS_ROOT / ".venv/Scripts/python.exe"
-GPT_SOVITS_PORT = 9880
 
 # DeepSeek（AI 分镜/文案）
 DEEPSEEK_BASE = "https://api.deepseek.com"
@@ -80,6 +77,5 @@ def get_settings() -> dict:
         "autodl_key_set": bool(get_autodl_key()),
         "deepseek_key": mask(get_deepseek_key()),
         "deepseek_key_set": bool(get_deepseek_key()),
-        "gpt_sovits_root": str(GPT_SOVITS_ROOT),
-        "gpt_sovits_port": GPT_SOVITS_PORT,
+        "tts_provider": "edge-tts",
     }
