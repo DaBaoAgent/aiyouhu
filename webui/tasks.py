@@ -111,7 +111,7 @@ def _log(task_id: str, msg: str):
 
 def parse_script(text: str, num_shots: int) -> list[str]:
     """解析分镜脚本：按【分镜N】分割，兜底按行"""
-    shots = re.findall(r"【分镜\d+\s*[·.\-]?\s*[^\n】]*】([\s\S]*?)(?=【分镜\d+【|\Z)", text)
+    shots = re.findall(r"【分镜\d+\s*[·.\-]?\s*[^\n】]*】([\s\S]*?)(?=【分镜\d+|\Z)", text)
     if not shots:
         shots = [l.strip() for l in text.splitlines() if l.strip()]
     shots = [re.sub(r"\s+", " ", s).strip() for s in shots if s.strip()]
