@@ -146,6 +146,15 @@ function collectProductInfo() {
   if (sell) parts.push("核心卖点：" + sell);
   return parts.join("\n");
 }
+function cleanDub(s) {
+  if (!s) return "";
+  // 剔除"画面描述:"等前缀标记，只留旁白
+  s = s.replace(/^(画面描述|画面|分镜描述)\s*[：:]\s*/g, "").trim();
+  if (/【分镜/.test(s)) return "";                 // 混入分镜标记 → 判脏
+  const shotWords = (s.match(/镜头|画面|特写|机位|拉近|推近|切换|动作/g) || []).length;
+  if (shotWords >= 2) return "";                    // 画面描述词汇过多 → 判脏
+  return s;
+}
 $("btnAiStory").addEventListener("click", async () => {
   const btn = $("btnAiStory");
   btn.disabled = true; btn.textContent = "⏳ AI 生成中…";
@@ -160,8 +169,15 @@ $("btnAiStory").addEventListener("click", async () => {
     });
     $("scriptText").value = res.shots.map((s, i) => `【分镜${i + 1}】${s}`).join("\n");
     $("charCount").textContent = $("scriptText").value.length + " 字";
-    if (res.dub && !$("dubText").value.trim()) $("dubText").value = res.dub;
-    toast("分镜脚本已生成，可手动修改");
+    const dub = cleanDub(res.dub);
+    if (dub && !$("dubText").value.trim()) {
+      $("dubText").value = dub;
+      toast("分镜脚本与配音旁白已生成");
+    } else if (!dub && !$("dubText").value.trim()) {
+      toast("⚠ AI 未生成纯口播文案，请手动填写配音文案（只写旁白台词，勿写画面描述）");
+    } else {
+      toast("分镜脚本已生成，可手动修改");
+    }
   } catch (err) {
     toast("AI 生成失败: " + err.message);
   } finally {

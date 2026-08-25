@@ -52,14 +52,15 @@ SYSTEM_PROMPT = """你是资深短视频导演，专为「爱优护轻便侠218�
 6. 结尾要有记忆点（定格/反转/互动）
 7. 口播文案中的数字一律用中文读法书写：型号编号逐位读（218写成「二幺八」），数量单位用中文数值（39公里写成「三十九公里」、15米写成「十五米」、13.8公斤写成「十三点八公斤」、400W写成「四百瓦」）
 
-输出格式（严格）：
+输出格式（严格，必须遵守）：
 【分镜1】画面描述...
 【分镜2】画面描述...
 ...
 【分镜N】画面描述...
 
 ---口播文案---
-与分镜同步的完整口播解说文案（约每分镜30字，总时长与分镜数×10秒匹配，语气亲切有感染力，突出卖点，可口语化）"""
+口播文案只允许是旁白解说词：念给观众听的完整台词（约每分镜30字，语气亲切有感染力，突出卖点，可口语化）。
+严禁在口播文案中出现「画面/镜头/特写/机位/切/推近/拉远/动作/表情/老年男人/孙女」等画面描述词汇，严禁出现【分镜】标记，严禁重复分镜画面描述，只允许台词本身。必须输出「---口播文案---」分隔符，即使文案很短。"""
 
 
 def _call_deepseek(user_prompt: str, max_tokens: int = 2000) -> str:
@@ -91,13 +92,17 @@ def _call_deepseek(user_prompt: str, max_tokens: int = 2000) -> str:
 
 
 def parse_storyboard(text: str) -> tuple[list[str], str]:
-    """解析输出 → (分镜列表, 口播文案)"""
-    shots = re.findall(r"【分镜\d+\s*[·.\-]?\s*[^\n】]*】([\s\S]*?)(?=【分镜\d+|---口播文案---|$)", text)
+    """解析输出 → (分镜列表, 口播文案)。支持多种分隔符形态；无口播段则返回空字符串（不伪造）"""
+    shots = re.findall(r"【分镜\d+\s*[·.\-]?\s*[^\n】]*】([\s\S]*?)(?=【分镜\d+|---口播文案---|---旁白---|---$)", text)
     shots = [s.strip() for s in shots if s.strip()]
     dub = ""
-    m = re.search(r"---口播文案---\s*([\s\S]*?)$", text)
-    if m:
-        dub = m.group(1).strip()
+    for pat in (r"---\s*口播文案\s*---?\s*([\s\S]*?)$",
+                r"---\s*旁白\s*---?\s*([\s\S]*?)$",
+                r"口播文案\s*[：:]\s*([\s\S]*?)$"):
+        m = re.search(pat, text)
+        if m:
+            dub = m.group(1).strip()
+            break
     if not shots:  # 兜底：按行拆分
         shots = [l.strip() for l in text.splitlines() if l.strip() and not l.startswith("---")]
     return shots, dub
@@ -131,8 +136,10 @@ def generate_storyboard(angle: str, num_shots: int, product_info: str = "",
         raise RuntimeError("AI 未返回有效分镜，请重试或手动填写")
     if len(shots) > num_shots:
         shots = shots[:num_shots]
-    if not dub:  # 兜底：用分镜文本拼口播
-        dub = "。".join(re.sub(r"【.*?】", "", s).strip() for s in shots) + "。"
+    if not dub:
+        # 不再用画面描述拼接兜底（会把画面描述误填进配音文案）；
+        # 返回空 dub，由前端提示用户手动填写旁白
+        dub = ""
     return {"shots": shots, "dub": dub, "angle": angle}
 
 
