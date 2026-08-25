@@ -282,7 +282,7 @@ def _run_film(task_id: str, card: dict, params: dict):
             _log(task_id, "🎙 配音生成中（GPT-SoVITS 本地）")
             try:
                 voice_wav = _dub_voice(task_id, card.get("dub") or params["dub_text"],
-                                       params["voice_id"], float(params.get("speed", 1.0)))
+                                       params["voice_id"], float(params.get("speed", 1.05)))
                 _log(task_id, "✅ 配音完成")
             except Exception as e:
                 errors.append(f"配音: {e}")

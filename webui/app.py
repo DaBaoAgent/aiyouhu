@@ -127,7 +127,7 @@ def tts_test(body: dict):
     if not tts_client.service_status()["running"]:
         raise HTTPException(500, "配音引擎不可用（需联网）")
     try:
-        wav = tts_client._tts_sync(text, voice, float(body.get("speed", 1.0)))
+        wav = tts_client._tts_sync(text, voice, float(body.get("speed", 1.05)))
         return {"url": f"/files/tts/{wav.name}", "text": text, "file": str(wav)}
     except RuntimeError as e:
         raise HTTPException(500, str(e))
