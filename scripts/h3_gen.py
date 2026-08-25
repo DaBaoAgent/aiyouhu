@@ -54,16 +54,28 @@ def load_env_file(path=".env"):
                         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+# data_url 缓存：同一文件路径+mtime 只编码一次（多分镜并发提交 9 图时省大量 CPU/IO）
+_DATA_URL_CACHE: dict[str, tuple[float, str]] = {}
+
+
 def to_data_url(path_or_url: str) -> str:
     if path_or_url.startswith(("http://", "https://", "data:")):
         return path_or_url
     if not os.path.exists(path_or_url):
         sys.exit(f"错误: 文件不存在: {path_or_url}（可传公网URL，本地文件自动转base64）")
+    mtime = os.path.getmtime(path_or_url)
+    hit = _DATA_URL_CACHE.get(path_or_url)
+    if hit and hit[0] == mtime:
+        return hit[1]
     mime, _ = mimetypes.guess_type(path_or_url)
     mime = mime or "application/octet-stream"
     with open(path_or_url, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
-    return f"data:{mime};base64,{b64}"
+    url = f"data:{mime};base64,{b64}"
+    _DATA_URL_CACHE[path_or_url] = (mtime, url)
+    if len(_DATA_URL_CACHE) > 128:
+        _DATA_URL_CACHE.clear()
+    return url
 
 
 def headers():
