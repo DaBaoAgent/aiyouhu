@@ -399,6 +399,7 @@ async function refreshTasks() {
   try {
     const res = await api("/api/tasks");
     state.tasks = res.tasks || [];
+    rebuildLogFilter();
     const list = $("taskList");
     if (!state.tasks.length) {
       list.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px">暂无任务</div>';
@@ -410,27 +411,41 @@ async function refreshTasks() {
 state.pollTimer = setInterval(refreshTasks, 5000);
 
 // ---------- 操作日志 ----------
-let lastLogKey = null;
-async function refreshLogs() {
+let lastLogKey = null, logFilterTask = "";
+function rebuildLogFilter() {
+  const sel = $("logFilter");
+  const names = [...new Set(state.tasks.map((t) => t.name))];
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全部任务</option>'
+    + names.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  if (names.includes(cur)) sel.value = cur;
+}
+async function refreshLogs(force = false) {
   try {
     const res = await api("/api/logs?limit=150");
-    const logs = res.logs || [];
-    if (!logs.length) return;
+    let logs = res.logs || [];
+    if (logFilterTask) logs = logs.filter((l) => l.task === logFilterTask);
     const list = $("logList");
+    if (!logs.length) {
+      list.innerHTML = '<div style="color:#64748b">暂无日志…</div>';
+      return;
+    }
     // 有新日志才重绘
-    const key = logs[0]?.time + logs[0]?.msg;
-    if (key === lastLogKey && list.childElementCount === logs.length) return;
+    const key = logs[0]?.time + logs[0]?.msg + logs[0]?.dur;
+    if (!force && key === lastLogKey && list.childElementCount === logs.length) return;
     lastLogKey = key;
     list.innerHTML = logs.map((l) => {
       const color = l.msg.startsWith("❌") ? "#f87171"
         : l.msg.startsWith("✅") || l.msg.startsWith("🎉") ? "#4ade80"
-        : l.msg.startsWith("▶") || l.msg.startsWith("🚀") ? "#93c5fd" : "#e2e8f0";
-      return `<div style="color:${color}"><span style="color:#64748b">[${esc(l.time)}]</span> <span style="color:#94a3b8">${esc(l.task)}</span> ${esc(l.msg)}</div>`;
+        : /^[▶⏫⏳🎙🔗🎚⬇🚀→]/.test(l.msg) ? "#93c5fd" : "#e2e8f0";
+      const dur = l.dur ? ` <span style="color:#64748b">(+${l.dur}s)</span>` : "";
+      return `<div style="color:${color}"><span style="color:#64748b">[${esc(l.time)}]</span> <span style="color:#94a3b8">${esc(l.task)}</span>${dur} ${esc(l.msg)}</div>`;
     }).join("");
     list.scrollTop = list.scrollHeight;
   } catch (err) { /* 忽略轮询失败 */ }
 }
-setInterval(refreshLogs, 4000);
+setInterval(() => refreshLogs(), 4000);
+$("logFilter").addEventListener("change", (e) => { logFilterTask = e.target.value; refreshLogs(true); });
 $("btnSettings").onclick = async () => {
   $("mask").classList.add("show");
   try {

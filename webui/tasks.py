@@ -63,15 +63,18 @@ def _update(task_id: str, **kw):
 
 
 def _log(task_id: str, msg: str):
-    """追加操作日志（时间戳 + 消息）"""
+    """追加操作日志（时间戳 + 消息 + 距上一条耗时秒），上限 1000 条"""
     with LOCK:
         t = TASKS.get(task_id)
         if t is None:
             return
-        t.setdefault("logs", []).append(
-            (time.strftime("%H:%M:%S"), msg))
-        if len(t["logs"]) > 300:
-            t["logs"] = t["logs"][-300:]
+        now = time.time()
+        prev = t.get("_last_log_ts", now)
+        dur = int(round(now - prev))
+        t.setdefault("logs", []).append((time.strftime("%H:%M:%S"), msg, dur))
+        t["_last_log_ts"] = now
+        if len(t["logs"]) > 1000:
+            t["logs"] = t["logs"][-1000:]
         _save()
 
 
@@ -85,8 +88,8 @@ def parse_script(text: str, num_shots: int) -> list[str]:
 
 
 def _h3_submit(workflow: str, prompt: str, images: list[str], resolution: str,
-               duration: int, out_path: Path) -> tuple[str, Path]:
-    """提交 H3 任务并同步等待完成，返回 (耗时秒, 下载文件路径)。失败抛 RuntimeError"""
+               duration: int, out_path: Path, task_id: str = "") -> tuple[str, Path]:
+    """提交 H3 任务并同步等待完成，返回 (耗时秒, 下载文件路径)。失败抛 RuntimeError。带细粒度日志"""
     def guard(fn, *a, **kw):
         """h3_gen 用 sys.exit 抛 SystemExit，需转成 RuntimeError"""
         try:
@@ -103,13 +106,23 @@ def _h3_submit(workflow: str, prompt: str, images: list[str], resolution: str,
             payload[f"ref_image_{i}"] = h3_gen.to_data_url(img)
     else:
         payload["prompt"] = prompt
-    task_id = guard(h3_gen.create_task, h3_gen.WORKFLOWS[workflow], payload)
-    # 轮询（带网络重试），同步阻塞
+    _log(task_id, f"⏫ H3提交: 工作流={workflow} 分辨率={resolution} 时长={duration}s 参考图={len(images[:9])}张")
+    cloud_id = guard(h3_gen.create_task, h3_gen.WORKFLOWS[workflow], payload)
+    _log(task_id, f"→ H3云端任务ID: {cloud_id}")
+    # 轮询（带网络重试），同步阻塞；状态变化/每60s心跳记日志
     deadline = time.time() + h3_gen.MAX_WAIT
     url = None
+    last_status, last_beat = "", time.time()
     while time.time() < deadline:
-        data = guard(h3_gen.query_task, task_id)
+        data = guard(h3_gen.query_task, cloud_id)
         st = data.get("status", "")
+        if st != last_status:
+            dur_msg = f"（云端已耗时{data.get('duration')}s）" if data.get("duration") else ""
+            _log(task_id, f"⏳ H3状态: {st}{dur_msg}")
+            last_status = st
+        elif time.time() - last_beat >= 60:
+            _log(task_id, f"⏳ H3轮询中… 状态={st} 云端耗时={data.get('duration', '?')}s")
+            last_beat = time.time()
         if st == "SUCCESS":
             for r in (data.get("results") or []):
                 if r.get("type") == "video" and r.get("url"):
@@ -122,8 +135,11 @@ def _h3_submit(workflow: str, prompt: str, images: list[str], resolution: str,
             raise RuntimeError(f"H3 任务失败: {data.get('msg') or data}")
         time.sleep(h3_gen.POLL_INTERVAL)
     if not url:
-        raise RuntimeError(f"H3 等待超时（{h3_gen.MAX_WAIT // 60}分钟）: {task_id}")
+        raise RuntimeError(f"H3 等待超时（{h3_gen.MAX_WAIT // 60}分钟）: {cloud_id}")
+    _log(task_id, "⬇ H3 视频生成完成，开始下载")
+    t0 = time.time()
     guard(h3_gen.download, url, str(out_path))
+    _log(task_id, f"✅ H3 下载完成: {out_path.name}（{out_path.stat().st_size / 1048576:.1f}MB，耗时{time.time() - t0:.0f}s）")
     return data.get("duration") or duration, out_path
 
 
@@ -134,6 +150,7 @@ def _gen_shot(task_id: str, shot_idx: int, params: dict, prompt: str, out_dir: P
     with sem:
         _update(task_id, stage=f"分镜{shot_idx} 视频生成中")
         _log(task_id, f"▶ 分镜{shot_idx} 提交 H3 任务（{params.get('resolution')} {params.get('duration')}s）")
+        t0 = time.time()
         try:
             out = out_dir / f"shot_{shot_idx:02d}.mp4"
             _, _ = _h3_submit(
@@ -143,8 +160,9 @@ def _gen_shot(task_id: str, shot_idx: int, params: dict, prompt: str, out_dir: P
                 params.get("resolution", "1080p竖"),
                 int(params.get("duration", 10)),
                 out,
+                task_id=task_id,
             )
-            _log(task_id, f"✅ 分镜{shot_idx} 视频生成完成")
+            _log(task_id, f"✅ 分镜{shot_idx} 视频生成完成（{out.stat().st_size / 1048576:.1f}MB，耗时{time.time() - t0:.0f}s）")
             with LOCK:
                 for s in TASKS[task_id]["shots"]:
                     if s["idx"] == shot_idx:
@@ -181,11 +199,13 @@ def _merge_and_mix(task: dict, params: dict, shot_files: list[Path], voice_wav: 
     final = unique_path(base / f"{task['name']}.mp4")
 
     _update(tid, stage="拼接分镜视频")
+    _log(tid, f"🔗 拼接 {len(shot_files)} 条分镜视频")
+    t0 = time.time()
     merged = out_dir / "merged.mp4"
     lst = out_dir / "concat.txt"
     lst.write_text("\n".join(f"file '{p.as_posix()}'" for p in shot_files), encoding="utf-8")
     _run_ff(["-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(merged)])
-    _log(tid, f"✅ 拼接完成（{len(shot_files)} 条视频）")
+    _log(tid, f"✅ 拼接完成（{merged.stat().st_size / 1048576:.1f}MB，耗时{time.time() - t0:.0f}s）")
 
     # 音频轨准备
     audio_inputs, filter_parts, mix_index = [], [], 0
@@ -201,6 +221,13 @@ def _merge_and_mix(task: dict, params: dict, shot_files: list[Path], voice_wav: 
         mix_index += 1
     if filter_parts:
         _update(tid, stage="混流配音与BGM")
+        parts_desc = []
+        if voice_wav:
+            parts_desc.append(f"配音×{params.get('voice_volume', 1.0)}")
+        if bgm_file and Path(bgm_file).exists():
+            parts_desc.append(f"BGM {Path(bgm_file).name}×{vol}")
+        _log(tid, f"🎚 混流: {', '.join(parts_desc)}")
+        t1 = time.time()
         n = len(filter_parts)
         if n == 2:
             amix = f"[v0][b1]amix=inputs=2:duration=first:dropout_transition=0[aout]"
@@ -210,6 +237,7 @@ def _merge_and_mix(task: dict, params: dict, shot_files: list[Path], voice_wav: 
                 ["-filter_complex", ";".join(filter_parts) + ";" + amix,
                  "-map", "0:v", "-map", "[aout]",
                  "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", str(final)])
+        _log(tid, f"✅ 混流完成（{final.stat().st_size / 1048576:.1f}MB，耗时{time.time() - t1:.0f}s）")
         return final
     # 无配音无BGM：直接返回拼接
     _run_ff(["-y", "-i", str(merged), "-c", "copy", str(final)])
@@ -229,23 +257,30 @@ def subprocess_run(cmd, **kw):
 
 
 def _dub_voice(task_id: str, text: str, voice_id: str, speed: float) -> Path | None:
-    """配音（带重试与状态更新）"""
+    """配音（edge-tts，带逐段日志与耗时）"""
     if not text.strip():
         return None
     voices = {v["id"]: v for v in tts_client.list_voices()}
     voice = voices.get(voice_id)
     if not voice:
         raise RuntimeError(f"音色不存在: {voice_id}")
+    rate = tts_client._rate_from_speed(float(speed))
     _update(task_id, stage="配音生成中")
+    _log(task_id, f"🎙 配音开始: 音色={voice['name']} 语速={speed}×（rate {rate}）")
+    t0 = time.time()
+    seg_info = {"n": 0}
+
+    def on_seg(i: int, n: int, p: Path):
+        seg_info["n"] = n
+        _log(task_id, f"🎙 配音段 {i}/{n} 完成（{p.stat().st_size / 1024:.0f}KB）")
+
     try:
-        return tts_client.dub_text(text, voice, speed, tag=task_id)
+        wav = tts_client.dub_text(text, voice, float(speed), tag=task_id, on_seg=on_seg)
+        n = seg_info["n"] or 1
+        _log(task_id, f"✅ 配音完成: 共{n}段合成拼接（{wav.stat().st_size / 1048576:.2f}MB，耗时{time.time() - t0:.0f}s）")
+        return wav
     except Exception as e:
-        # 服务未起则自动拉起一次再试
-        st = tts_client.service_status()
-        if not st["running"]:
-            tts_client.start_service()
-            time.sleep(5)
-            return tts_client.dub_text(text, voice, speed, tag=task_id)
+        _log(task_id, f"❌ 配音失败: {e}")
         raise e
 
 
@@ -288,7 +323,7 @@ def _run_film(task_id: str, card: dict, params: dict):
         # 主线程配音（与视频并行）
         voice_wav = None
         if params.get("voice_on") and params.get("dub_text", "").strip():
-            _log(task_id, "🎙 配音生成中（GPT-SoVITS 本地）")
+            _log(task_id, "🎙 配音生成中（edge-tts 云端）")
             try:
                 voice_wav = _dub_voice(task_id, card.get("dub") or params["dub_text"],
                                        params["voice_id"], float(params.get("speed", 1.05)))

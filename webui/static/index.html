@@ -325,7 +325,11 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
   <!-- ⑧ 操作日志 -->
   <div class="card">
     <h3>📋 操作日志 <span class="tag tag-blue">实时</span></h3>
-    <div class="sub">实时显示每个任务的每一步执行情况（提交→生成→配音→拼接→完成）。</div>
+    <div class="sub">实时显示每个任务的每一步执行情况（提交→生成→配音→拼接→完成），括号内为距上一步耗时。</div>
+    <div class="row" style="margin-bottom:8px">
+      <label style="min-width:60px">过滤</label>
+      <select id="logFilter" style="flex:1"></select>
+    </div>
     <div id="logList" style="background:#0f172a;border-radius:12px;padding:14px;max-height:320px;overflow-y:auto;font-family:Consolas,monospace;font-size:12px;line-height:1.9">
       <div style="color:#64748b">暂无日志…</div>
     </div>

@@ -178,8 +178,9 @@ def split_text(text: str, max_chars: int = 180) -> list[str]:
     return chunks
 
 
-def dub_text(text: str, voice: dict, speed: float = 1.0, tag: str = "dub") -> Path:
-    """整段文案配音：分段 edge-tts 合成 → 拼接 → 返回 wav 路径"""
+def dub_text(text: str, voice: dict, speed: float = 1.0, tag: str = "dub",
+             on_seg: callable = None) -> Path:
+    """整段文案配音：分段 edge-tts 合成 → 拼接 → 返回 wav 路径。on_seg(i, n, path) 每段完成回调"""
     segs = split_text(text)
     if not segs:
         raise RuntimeError("配音文案为空")
@@ -188,6 +189,8 @@ def dub_text(text: str, voice: dict, speed: float = 1.0, tag: str = "dub") -> Pa
         p = TTS_DIR / f"{tag}_{i:02d}.mp3"
         _tts_sync(seg, voice, speed, p)
         parts.append(p)
+        if on_seg:
+            on_seg(i + 1, len(segs), p)
     out = TTS_DIR / f"{tag}_full.wav"
     if len(parts) == 1:
         subprocess.run(

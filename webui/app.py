@@ -265,7 +265,8 @@ def get_logs(limit: int = 200):
     entries = []
     for t in tasks.get_tasks():
         for e in (t.get("logs") or [])[-limit:]:
-            entries.append({"task": t["name"], "time": e[0], "msg": e[1], "task_id": t["id"]})
+            entries.append({"task": t["name"], "time": e[0], "msg": e[1],
+                            "dur": e[2] if len(e) > 2 else None, "task_id": t["id"]})
     entries.sort(key=lambda x: x["time"], reverse=True)
     return {"logs": entries[:limit]}
 
