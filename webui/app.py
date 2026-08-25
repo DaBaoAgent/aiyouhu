@@ -60,9 +60,30 @@ async def upload(file: UploadFile = File(...), kind: str = Form("ref_image")):
         raise HTTPException(400, f"未知 kind: {kind}")
     fname = f"{prefix}_{uuid.uuid4().hex[:8]}{ext}"
     dest = dest_dir / fname
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    return {"url": f"/files/{dest.relative_to(DATA_DIR).as_posix()}", "server_path": str(dest), "name": fname}
+    if kind == "ref_image":
+        # 压缩参考图：最长边1200 + JPEG q85，避免 H3 API 50MB 请求体超限
+        from PIL import Image
+        with dest.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+        try:
+            im = Image.open(dest)
+            im.thumbnail((1200, 1200), Image.LANCZOS)
+            if im.mode in ("RGBA", "P"):
+                bg = Image.new("RGB", im.size, (255, 255, 255))
+                bg.paste(im, mask=im.split()[-1] if im.mode == "RGBA" else None)
+                im = bg
+            else:
+                im = im.convert("RGB")
+            jpg = dest.with_name(dest.stem + "_c.jpg")
+            im.save(jpg, "JPEG", quality=85)
+            dest.unlink(missing_ok=True)
+            dest = jpg
+        except Exception as e:
+            raise HTTPException(400, f"图片处理失败: {e}")
+    else:
+        with dest.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+    return {"url": f"/files/{dest.relative_to(DATA_DIR).as_posix()}", "server_path": str(dest), "name": dest.name}
 
 
 # ---------- 设置 ----------
@@ -156,7 +177,8 @@ def list_bgm():
 def gen_storyboard(body: dict):
     try:
         card = storyboard.generate_storyboard(
-            body.get("angle", ""), int(body.get("num_shots", 6)), body.get("product_extra", ""))
+            body.get("angle", ""), int(body.get("num_shots", 6)),
+            body.get("product_info", ""), body.get("template", ""))
         return {"ok": True, **card}
     except RuntimeError as e:
         raise HTTPException(500, str(e))
@@ -185,6 +207,8 @@ def generate(body: dict):
         "bgm_file": body.get("bgm_file", ""),
         "bgm_name": body.get("bgm_name", ""),
         "bgm_volume": float(body.get("bgm_volume", 0.3)),
+        "product_info": body.get("product_info", ""),
+        "template": body.get("template", ""),
     }
     # 校验
     if params["resolution"] not in h3_resolutions():
@@ -219,6 +243,17 @@ def h3_resolutions():
 @app.get("/api/tasks")
 def get_tasks():
     return {"tasks": tasks.get_tasks()}
+
+
+@app.get("/api/logs")
+def get_logs(limit: int = 200):
+    """聚合所有任务的操作日志（按时间倒序）"""
+    entries = []
+    for t in tasks.get_tasks():
+        for e in (t.get("logs") or [])[-limit:]:
+            entries.append({"task": t["name"], "time": e[0], "msg": e[1], "task_id": t["id"]})
+    entries.sort(key=lambda x: x["time"], reverse=True)
+    return {"logs": entries[:limit]}
 
 
 @app.get("/api/tasks/{tid}/video")

@@ -104,6 +104,14 @@ python h3_gen.py -w multi_image --prompt "提示词" \
 - 推广视频: 传 正侧展开图 + 45度带头枕图（产品外观基准），人物/场景靠提示词生成
 - 脚本从任意目录运行都能读到 `scripts/.env` 的 key
 
+## WebUI（爱优护全自动视频生成工厂）
+
+- 入口: `启动WebUI.bat`（双击）→ http://127.0.0.1:8000
+- 代码: `webui/`（FastAPI + 原生前端），说明见 `webui/README.md`
+- 能力: 9产品图+4模特图上传 / DeepSeek AI分镜(1-10个,默认6=60s) / 全智能批量1-200条(每条独立创意文案) / GPT-SoVITS本地配音(音色克隆+试听) / BGM上传或曲库 / ffmpeg拼接混流 / 任务进度+成片播放
+- 配置: AUTODL_API_KEY 存 `scripts/.env`（与 CLI 共用）；DeepSeek 读 Hermes `.env`
+- 坑: ASR 需 `D:\modelscope_cache` junction（sentencepiece 打不开中文路径）；h3_gen 的 sys.exit 是 SystemExit 需转 RuntimeError
+
 ## 生成记录（实测）
 
 | 编号 | 名称 | task_id | 耗时 | 大小 | 参考图 | 状态 |

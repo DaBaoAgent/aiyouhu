@@ -102,20 +102,29 @@ def parse_storyboard(text: str) -> tuple[list[str], str]:
     return shots, dub
 
 
-def build_user_prompt(angle: str, num_shots: int, product_extra: str = "") -> str:
+def build_user_prompt(angle: str, num_shots: int, product_info: str = "", template: str = "") -> str:
+    # 节奏模板
+    pace = {
+        "": "节奏明快、镜头切换干脆（默认 3 分镜快节奏风格）",
+        "d": "爆款洗脑逻辑：反差人设+魔性重复+快切卡点+路人惊讶反应+结尾定格反转",
+        "slow2": "慢节奏沉浸式：每个分镜画面从容展开，镜头缓慢推移/环绕，情绪舒缓，适合纪录片/情感向",
+        "slow1": "慢节奏电影感：单镜头长叙事，镜头极缓，氛围拉满，一镜到底的感觉",
+    }.get(template, "节奏明快")
     base = (
-        f"请创作 1 条 60 秒成片的分镜脚本，共 {num_shots} 个分镜（每分镜 10 秒）。\n"
+        f"请创作 1 条成片的分镜脚本，共 {num_shots} 个分镜（每分镜 10 秒）。\n"
+        f"节奏要求：{pace}\n"
         f"创意场景角度：{angle}\n"
     )
-    if product_extra:
-        base += f"附加要求：{product_extra}\n"
-    base += "要求：每个分镜画面具体、有创意有脑洞、不重样；卖点自然融入场景；按格式输出。"
+    if product_info:
+        base += f"产品资料（必须精准引用，作为文案卖点依据）：\n{product_info}\n"
+    base += "要求：每个分镜画面具体、有创意有脑洞、不重样；卖点自然融入场景；严格按格式输出。"
     return base
 
 
-def generate_storyboard(angle: str, num_shots: int, product_extra: str = "") -> dict:
+def generate_storyboard(angle: str, num_shots: int, product_info: str = "",
+                        template: str = "") -> dict:
     """生成一条分镜脚本 → {shots: [...], dub: str, angle: str}"""
-    text = _call_deepseek(build_user_prompt(angle, num_shots, product_extra))
+    text = _call_deepseek(build_user_prompt(angle, num_shots, product_info, template))
     shots, dub = parse_storyboard(text)
     if not shots:
         raise RuntimeError("AI 未返回有效分镜，请重试或手动填写")
@@ -127,7 +136,7 @@ def generate_storyboard(angle: str, num_shots: int, product_extra: str = "") -> 
 
 
 def generate_batch(count: int, num_shots: int, start_index: int = 1,
-                   product_extra: str = "") -> list[dict]:
+                   product_info: str = "", template: str = "") -> list[dict]:
     """全智能批量：count 条，角度池轮换，每条独立请求（随机选角度避免顺序重复感）"""
     import random
     random.seed(time.time())
@@ -136,7 +145,7 @@ def generate_batch(count: int, num_shots: int, start_index: int = 1,
         angle = random.choice(ANGLES) if count <= len(ANGLES) else ANGLES[i % len(ANGLES)]
         if count > len(ANGLES) and i >= len(ANGLES):
             angle = f"{ANGLES[i % len(ANGLES)]}·变奏{i // len(ANGLES) + 1}"
-        card = generate_storyboard(angle, num_shots, product_extra)
+        card = generate_storyboard(angle, num_shots, product_info, template)
         card["batch_no"] = start_index + i
         results.append(card)
     return results

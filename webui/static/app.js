@@ -136,13 +136,27 @@ $("scriptText").addEventListener("input", (e) => {
 });
 
 // ---------- AI 分镜 ----------
+function collectProductInfo() {
+  const name = $("prodName").value.trim();
+  const params = $("prodParams").value.trim();
+  const sell = $("prodSell").value.trim();
+  const parts = [];
+  if (name) parts.push("产品名称：" + name);
+  if (params) parts.push("产品参数：" + params);
+  if (sell) parts.push("核心卖点：" + sell);
+  return parts.join("\n");
+}
 $("btnAiStory").addEventListener("click", async () => {
   const btn = $("btnAiStory");
   btn.disabled = true; btn.textContent = "⏳ AI 生成中…";
   try {
     const res = await api("/api/storyboard", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ num_shots: numShots, angle: "" }),
+      body: JSON.stringify({
+        num_shots: numShots, angle: "",
+        product_info: collectProductInfo(),
+        template: $("selTemplate").value,
+      }),
     });
     $("scriptText").value = res.shots.map((s, i) => `【分镜${i + 1}】${s}`).join("\n");
     $("charCount").textContent = $("scriptText").value.length + " 字";
@@ -315,6 +329,8 @@ $("btnGo").addEventListener("click", async () => {
     bgm_file: state.bgmMode === "none" ? "" : state.bgmFile,
     bgm_name: state.bgmMode === "library" ? ($("bgmSelect").selectedOptions[0]?.textContent || "") : "",
     bgm_volume: +$("bgmVolSlider").value / 100,
+    product_info: collectProductInfo(),
+    template: $("selTemplate").value,
   };
   const btn = $("btnGo");
   btn.disabled = true; btn.textContent = "⏳ 提交中…";
@@ -377,7 +393,28 @@ async function refreshTasks() {
 }
 state.pollTimer = setInterval(refreshTasks, 5000);
 
-// ---------- 设置 ----------
+// ---------- 操作日志 ----------
+let lastLogKey = null;
+async function refreshLogs() {
+  try {
+    const res = await api("/api/logs?limit=150");
+    const logs = res.logs || [];
+    if (!logs.length) return;
+    const list = $("logList");
+    // 有新日志才重绘
+    const key = logs[0]?.time + logs[0]?.msg;
+    if (key === lastLogKey && list.childElementCount === logs.length) return;
+    lastLogKey = key;
+    list.innerHTML = logs.map((l) => {
+      const color = l.msg.startsWith("❌") ? "#f87171"
+        : l.msg.startsWith("✅") || l.msg.startsWith("🎉") ? "#4ade80"
+        : l.msg.startsWith("▶") || l.msg.startsWith("🚀") ? "#93c5fd" : "#e2e8f0";
+      return `<div style="color:${color}"><span style="color:#64748b">[${esc(l.time)}]</span> <span style="color:#94a3b8">${esc(l.task)}</span> ${esc(l.msg)}</div>`;
+    }).join("");
+    list.scrollTop = list.scrollHeight;
+  } catch (err) { /* 忽略轮询失败 */ }
+}
+setInterval(refreshLogs, 4000);
 $("btnSettings").onclick = async () => {
   $("mask").classList.add("show");
   try {

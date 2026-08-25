@@ -62,6 +62,19 @@ def _update(task_id: str, **kw):
             _save()
 
 
+def _log(task_id: str, msg: str):
+    """追加操作日志（时间戳 + 消息）"""
+    with LOCK:
+        t = TASKS.get(task_id)
+        if t is None:
+            return
+        t.setdefault("logs", []).append(
+            (time.strftime("%H:%M:%S"), msg))
+        if len(t["logs"]) > 300:
+            t["logs"] = t["logs"][-300:]
+        _save()
+
+
 def parse_script(text: str, num_shots: int) -> list[str]:
     """解析分镜脚本：按【分镜N】分割，兜底按行"""
     shots = re.findall(r"【分镜\d+\s*[·.\-]?\s*[^\n】]*】([\s\S]*?)(?=【分镜\d+【|\Z)", text)
@@ -120,6 +133,7 @@ def _gen_shot(task_id: str, shot_idx: int, params: dict, prompt: str, out_dir: P
     sem = SEM or threading.Semaphore(1)
     with sem:
         _update(task_id, stage=f"分镜{shot_idx} 视频生成中")
+        _log(task_id, f"▶ 分镜{shot_idx} 提交 H3 任务（{params.get('resolution')} {params.get('duration')}s）")
         try:
             out = out_dir / f"shot_{shot_idx:02d}.mp4"
             _, _ = _h3_submit(
@@ -130,6 +144,7 @@ def _gen_shot(task_id: str, shot_idx: int, params: dict, prompt: str, out_dir: P
                 int(params.get("duration", 10)),
                 out,
             )
+            _log(task_id, f"✅ 分镜{shot_idx} 视频生成完成")
             with LOCK:
                 for s in TASKS[task_id]["shots"]:
                     if s["idx"] == shot_idx:
@@ -139,6 +154,7 @@ def _gen_shot(task_id: str, shot_idx: int, params: dict, prompt: str, out_dir: P
                 TASKS[task_id]["progress"] = int(55 + done / total * 35)
                 _save()
         except Exception as e:
+            _log(task_id, f"❌ 分镜{shot_idx} 失败: {e}")
             with LOCK:
                 for s in TASKS[task_id]["shots"]:
                     if s["idx"] == shot_idx:
@@ -158,6 +174,7 @@ def _merge_and_mix(task: dict, params: dict, shot_files: list[Path], voice_wav: 
     lst = out_dir / "concat.txt"
     lst.write_text("\n".join(f"file '{p.as_posix()}'" for p in shot_files), encoding="utf-8")
     _run_ff(["-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(merged)])
+    _log(tid, f"✅ 拼接完成（{len(shot_files)} 条视频）")
 
     # 音频轨准备
     audio_inputs, filter_parts, mix_index = [], [], 0
@@ -236,6 +253,7 @@ def _run_film(task_id: str, card: dict, params: dict):
         shots = shots[: int(params.get("num_shots", len(shots)))]
         if not shots:
             raise RuntimeError("分镜脚本为空")
+        _log(task_id, f"🚀 开始生成：{len(shots)} 个分镜 → H3视频 → 配音 → 拼接")
         with LOCK:
             task["shots"] = [{"idx": i + 1, "status": "pending", "file": "", "error": ""} for i in range(len(shots))]
             _save()
@@ -261,11 +279,14 @@ def _run_film(task_id: str, card: dict, params: dict):
         # 主线程配音（与视频并行）
         voice_wav = None
         if params.get("voice_on") and params.get("dub_text", "").strip():
+            _log(task_id, "🎙 配音生成中（GPT-SoVITS 本地）")
             try:
                 voice_wav = _dub_voice(task_id, card.get("dub") or params["dub_text"],
                                        params["voice_id"], float(params.get("speed", 1.0)))
+                _log(task_id, "✅ 配音完成")
             except Exception as e:
                 errors.append(f"配音: {e}")
+                _log(task_id, f"❌ 配音失败: {e}")
 
         for t in vthreads:
             t.join()
@@ -274,12 +295,15 @@ def _run_film(task_id: str, card: dict, params: dict):
             raise RuntimeError("；".join(errors[:3]))
         shot_files = [results[i] for i in sorted(results)]
         _update(task_id, progress=92, stage="拼接与混流")
+        _log(task_id, "🔗 拼接分镜视频")
         final = _merge_and_mix(task, params, shot_files, voice_wav)
         _update(task_id, status="success", stage="已完成", progress=100,
                 out_file=str(final), finished_at=time.strftime("%H:%M:%S"),
                 size_mb=round(final.stat().st_size / 1048576, 1))
+        _log(task_id, f"🎉 成片完成：{final.name}（{round(final.stat().st_size/1048576,1)}MB）")
     except Exception as e:
         _update(task_id, status="failed", stage="失败", error=str(e), finished_at=time.strftime("%H:%M:%S"))
+        _log(task_id, f"❌ 任务失败: {e}")
     _save()
 
 
@@ -323,12 +347,15 @@ def submit_ai(params: dict, count: int) -> list[str]:
             if not t or t["status"] != "queued":
                 continue
             _update(tid, stage="AI 创意文案生成中")
+            _log(tid, "🤖 AI 创意文案生成中（DeepSeek）")
             try:
                 card = storyboard.generate_storyboard(
                     params.get("angle", ""), int(params.get("num_shots", 6)),
-                    params.get("product_extra", ""))
+                    params.get("product_info", ""), params.get("template", ""))
+                _log(tid, f"✅ 文案完成：{card['angle']}（{len(card['shots'])} 分镜）")
             except Exception as e:
                 _update(tid, status="failed", stage="失败", error=f"AI 文案: {e}")
+                _log(tid, f"❌ AI 文案失败: {e}")
                 continue
             with LOCK:
                 TASKS[tid]["angle"] = card["angle"]

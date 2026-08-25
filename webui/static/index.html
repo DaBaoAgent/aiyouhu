@@ -115,7 +115,7 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
 
 <header>
   <div class="header-inner">
-    <div class="logo"><img src="/static/logo.png" alt="logo"> 爱优护全自动视频生成工厂 <span class="badge">轻便侠 218</span></div>
+    <div class="logo"><img src="/static/logo.png" alt="logo"> 爱优护全自动视频生成工厂</div>
     <button class="btn-gear" id="btnSettings">⚙ API 设置</button>
   </div>
 </header>
@@ -132,8 +132,23 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
   <!-- ① 产品参考图 -->
   <div class="card">
     <h3>📦 产品参考图 <span class="tag tag-blue">最多 9 张 · 外观以此为准</span></h3>
-    <div class="sub">白底无人物图最佳。点击格子上传，悬停右上角删除，可拖动排序。</div>
+    <div class="sub">白底无人物图最佳。点击格子上传，悬停右上角删除，可拖动排序。上传后自动压缩，AI 将结合下方产品资料生成精准文案。</div>
     <div class="grid grid-5" id="prodGrid"></div>
+    <div style="margin-top:14px">
+      <div class="row">
+        <label style="min-width:60px">产品名称</label>
+        <input class="input" id="prodName" style="flex:1" placeholder="如：爱优护轻便侠218电动轮椅">
+      </div>
+      <div class="row">
+        <label style="min-width:60px">产品参数</label>
+        <textarea id="prodParams" style="min-height:52px;flex:1" placeholder="如：仅重13.8kg、1秒折叠、承重100kg、续航10Ah=16km/15Ah=25km/22Ah=39km、速度2-6km/h"></textarea>
+      </div>
+      <div class="row">
+        <label style="min-width:60px">核心卖点</label>
+        <textarea id="prodSell" style="min-height:52px;flex:1" placeholder="如：超轻单手可提、1秒折叠可上飞机高铁、3.0防翻系统电磁刹车松手即停、105-145°后躺、15m手机遥控"></textarea>
+      </div>
+      <div class="hint">AI 生成分镜与配音文案时会精准引用这些资料，写得更贴产品。</div>
+    </div>
   </div>
 
   <!-- ② 模特参考图 -->
@@ -151,6 +166,8 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
       <select id="selTemplate">
         <option value="">模板：3分镜快节奏 v2（老爷爷·四大卖点）</option>
         <option value="d">模板：版本D 洗脑版（反差+魔性循环）</option>
+        <option value="slow2">模板：2分镜慢节奏（沉浸式纪录片风）</option>
+        <option value="slow1">模板：1分镜慢节奏（电影感一镜到底）</option>
         <option value="">留空，手动写</option>
       </select>
       <button class="btn btn-ai" id="btnAiStory">✨ AI 生成分镜</button>
@@ -304,7 +321,16 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
     <div id="taskList"><div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px">暂无任务，点击上方「🚀 开始生成」</div></div>
   </div>
 
-  <footer>爱优护全自动视频生成工厂 · AutoDL.Art MiniMax H3 · 配音 GPT-SoVITS · v0.1</footer>
+  <!-- ⑧ 操作日志 -->
+  <div class="card">
+    <h3>📋 操作日志 <span class="tag tag-blue">实时</span></h3>
+    <div class="sub">实时显示每个任务的每一步执行情况（提交→生成→配音→拼接→完成）。</div>
+    <div id="logList" style="background:#0f172a;border-radius:12px;padding:14px;max-height:320px;overflow-y:auto;font-family:Consolas,monospace;font-size:12px;line-height:1.9">
+      <div style="color:#64748b">暂无日志…</div>
+    </div>
+  </div>
+
+  <footer>爱优护全自动视频生成工厂 · AutoDL.Art MiniMax H3 · 配音 GPT-SoVITS · v0.2</footer>
 </div>
 
 <!-- 设置弹窗 -->
