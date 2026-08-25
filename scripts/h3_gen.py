@@ -76,7 +76,7 @@ def headers():
 def create_task(workflow_id: str, payload: dict):
     url = f"{BASE_URL}/api/v1/comfyui/comfyui_workflow/{workflow_id}"
     print(f"[1/3] 提交任务 -> {url}")
-    resp = requests.post(url, headers=headers(), json=payload, timeout=60)
+    resp = requests.post(url, headers=headers(), json=payload, timeout=180)
     try:
         body = resp.json()
     except ValueError:

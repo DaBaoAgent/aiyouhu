@@ -93,7 +93,7 @@ description: 爱优护轻便侠电动轮椅H3视频生成。触发:爱优护/轻
 ## 调用
 
 ```bash
-cd "C:/Users/20200/AppData/Local/hermes/skills/ayh-h3/scripts"
+cd "C:/Users/xxx13/AppData/Local/hermes/skills/media/ayh-h3/scripts"
 python h3_gen.py -w multi_image --prompt "提示词" \
   -i "D:/BaiduSyncdisk/10 产品高清图/爱优护详情页/轻便侠 218/正侧-3-无阴影.png" \
   -i "D:/BaiduSyncdisk/10 产品高清图/爱优护详情页/轻便侠 218/折叠-无阴影.png" \
