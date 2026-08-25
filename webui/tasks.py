@@ -467,7 +467,11 @@ def submit_ai(params: dict, count: int) -> list[str]:
                 TASKS[tid]["angle"] = card["angle"]
                 TASKS[tid]["duration_s"] = len(card.get("shots") or []) * int(params.get("duration", 10))
                 _save(force=True)
-            _run_film(tid, card, params)
+            # 任务级并发：不阻塞等待，受 TASK_SEM 限制同时运行的成片任务数
+            def run(card=card, tid=tid):
+                with TASK_SEM:
+                    _run_film(tid, card, params)
+            threading.Thread(target=run, daemon=True).start()
 
     threading.Thread(target=coordinator, daemon=True).start()
     return tids
