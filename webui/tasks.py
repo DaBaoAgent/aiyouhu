@@ -169,6 +169,17 @@ def _merge_and_mix(task: dict, params: dict, shot_files: list[Path], voice_wav: 
     out_dir = OUTPUTS_DIR / tid
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # 成片输出目录：优先用户选择的目录，否则默认 outputs/<tid>；异常回退默认
+    final_dir = None
+    od = (params.get("output_dir") or "").strip()
+    if od:
+        final_dir = Path(od)
+        if not final_dir.is_dir():
+            _log(tid, f"⚠ 输出目录不可用，回退默认: {OUTPUTS_DIR / tid}")
+            final_dir = None
+    base = final_dir or out_dir
+    final = unique_path(base / f"{task['name']}.mp4")
+
     _update(tid, stage="拼接分镜视频")
     merged = out_dir / "merged.mp4"
     lst = out_dir / "concat.txt"
@@ -195,14 +206,12 @@ def _merge_and_mix(task: dict, params: dict, shot_files: list[Path], voice_wav: 
             amix = f"[v0][b1]amix=inputs=2:duration=first:dropout_transition=0[aout]"
         else:
             amix = f"[v0]anull[aout]" if n == 1 else "anull[aout]"
-        final = out_dir / f"{task['name']}.mp4"
         _run_ff(["-y", "-i", str(merged)] + audio_inputs +
                 ["-filter_complex", ";".join(filter_parts) + ";" + amix,
                  "-map", "0:v", "-map", "[aout]",
                  "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", str(final)])
         return final
     # 无配音无BGM：直接返回拼接
-    final = out_dir / f"{task['name']}.mp4"
     _run_ff(["-y", "-i", str(merged), "-c", "copy", str(final)])
     return final
 
@@ -309,6 +318,7 @@ def _run_film(task_id: str, card: dict, params: dict):
 
 def _submit_task(name: str, params: dict, card: dict) -> str:
     tid = uuid.uuid4().hex[:10]
+    name = sanitize_name(name)
     duration_s = len(card.get("shots") or parse_script(card.get("script_text", ""), 99)) * int(params.get("duration", 10))
     with LOCK:
         TASKS[tid] = {
@@ -319,9 +329,28 @@ def _submit_task(name: str, params: dict, card: dict) -> str:
             "duration_s": duration_s, "resolution": params.get("resolution"),
             "voice_on": bool(params.get("voice_on")), "bgm": params.get("bgm_name", ""),
             "angle": card.get("angle", ""),
+            "output_dir": (params.get("output_dir") or "").strip(),
         }
         _save()
     return tid
+
+
+def sanitize_name(name: str) -> str:
+    """成片文件名清理：去 Windows 非法字符，防空名"""
+    name = re.sub(r'[<>:"/\\|?*]', "_", str(name or "")).strip()
+    return name or "成片"
+
+
+def unique_path(p: Path) -> Path:
+    """重名自动加 _1/_2 后缀（不覆盖已有成片）"""
+    if not p.exists():
+        return p
+    stem, suffix = p.stem, p.suffix
+    for i in range(1, 1000):
+        cand = p.with_name(f"{stem}_{i}{suffix}")
+        if not cand.exists():
+            return cand
+    return p.with_name(f"{stem}_{int(time.time())}{suffix}")
 
 
 def submit_manual(params: dict) -> str:

@@ -3,6 +3,7 @@
 """爱优护全自动视频生成工厂 - FastAPI 入口
 启动: uvicorn app:app --host 127.0.0.1 --port 8000
 """
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -159,6 +160,26 @@ def list_bgm():
     return items
 
 
+@app.get("/api/dirs")
+def list_dirs(path: str = ""):
+    """目录浏览（供前端选成片输出目录）。path 空 → 返回盘符列表；否则列出子目录。只读。"""
+    if not path:
+        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
+        return {"path": "", "parent": None, "dirs": [{"name": d, "path": d} for d in drives]}
+    p = Path(path)
+    if not p.exists() or not p.is_dir():
+        raise HTTPException(400, f"目录不存在: {path}")
+    items = []
+    try:
+        for d in sorted(p.iterdir()):
+            if d.is_dir():
+                items.append({"name": d.name, "path": str(d)})
+    except PermissionError:
+        pass
+    parent = str(p.parent) if p.parent != p else None
+    return {"path": str(p), "parent": parent, "dirs": items}
+
+
 # ---------- AI 分镜 ----------
 
 @app.post("/api/storyboard")
@@ -197,8 +218,13 @@ def generate(body: dict):
         "bgm_volume": float(body.get("bgm_volume", 0.3)),
         "product_info": body.get("product_info", ""),
         "template": body.get("template", ""),
+        "output_dir": (body.get("output_dir") or "").strip(),
     }
     # 校验
+    if params["output_dir"]:
+        od = Path(params["output_dir"])
+        if not od.is_dir():
+            raise HTTPException(400, f"输出目录不存在: {params['output_dir']}")
     if params["resolution"] not in h3_resolutions():
         raise HTTPException(400, f"分辨率非法: {params['resolution']}")
     if params["workflow"] not in ("multi_image", "text2video", "first_last", "image_audio"):

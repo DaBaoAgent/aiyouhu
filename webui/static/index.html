@@ -302,6 +302,11 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
       <label>命名</label>
       <input class="input" id="nameInput" style="flex:1" value="轻便侠218_成片">
     </div>
+    <div class="row">
+      <label>输出目录</label>
+      <input class="input" id="outDirInput" style="flex:1" placeholder="留空=默认 outputs/任务ID" readonly>
+      <button class="btn" id="btnBrowseDir">📁 选择</button>
+    </div>
     <div class="fee" id="feeEst">💰 预估费用：—</div>
   </div>
 
@@ -354,6 +359,20 @@ footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:30px}
 </div>
 
 <div id="toast"></div>
+
+<!-- 目录浏览弹窗 -->
+<div class="mask" id="maskDir">
+  <div class="modal" style="width:620px">
+    <h3>📁 选择成片输出目录</h3>
+    <div class="svc-line" id="dirPath" style="word-break:break-all;background:#f8fafc;padding:8px 10px;border-radius:8px;font-weight:700;border:1px solid #e2e8f0"></div>
+    <div id="dirList" style="max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:10px;margin:10px 0;padding:6px"></div>
+    <div class="btns">
+      <button class="btn btn-primary" id="btnDirPick">✅ 使用此目录</button>
+      <button class="btn" id="btnDirParent">⬆ 上级目录</button>
+      <button class="btn" id="btnDirClose">取消</button>
+    </div>
+  </div>
+</div>
 <input type="file" id="fileInput" style="display:none" accept="image/*,audio/*">
 
 <script src="/static/app.js"></script>

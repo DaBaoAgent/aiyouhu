@@ -285,6 +285,39 @@ $("btnBgmUpload").addEventListener("click", () => {
   fi.accept = "audio/*"; fi.value = ""; fi.click();
 });
 
+// ---------- 输出目录选择 ----------
+let curDirPath = "", parentPath = "";
+async function browseDir(path) {
+  try {
+    const res = await api("/api/dirs?path=" + encodeURIComponent(path));
+    curDirPath = res.path;
+    parentPath = res.parent || "";
+    $("dirPath").textContent = res.path ? "📂 " + res.path : "选择盘符";
+    $("btnDirParent").style.display = res.parent ? "" : "none";
+    const list = $("dirList");
+    list.innerHTML = "";
+    res.dirs.forEach((d) => {
+      const row = document.createElement("div");
+      row.style.cssText = "padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px";
+      row.innerHTML = `<span>📂 ${esc(d.name)}</span>`;
+      row.onmouseenter = () => (row.style.background = "#f1f5f9");
+      row.onmouseleave = () => (row.style.background = "");
+      row.onclick = () => browseDir(d.path);
+      list.appendChild(row);
+    });
+    if (!res.dirs.length) list.innerHTML = '<div style="color:#94a3b8;padding:14px;text-align:center;font-size:13px">空目录</div>';
+  } catch (err) { toast("浏览失败: " + err.message); }
+}
+$("btnBrowseDir").onclick = () => { $("maskDir").classList.add("show"); browseDir(""); };
+$("btnDirParent").onclick = () => parentPath && browseDir(parentPath);
+$("btnDirPick").onclick = () => {
+  if (!curDirPath) { toast("请先进入一个目录"); return; }
+  $("outDirInput").value = curDirPath;
+  $("maskDir").classList.remove("show");
+  toast("输出目录已设置: " + curDirPath);
+};
+$("btnDirClose").onclick = () => $("maskDir").classList.remove("show");
+
 // ---------- 开始生成 ----------
 $("btnGo").addEventListener("click", async () => {
   const images = [...state.prodImages.map((x) => x.path), ...state.modelImages.map((x) => x.path)];
@@ -313,6 +346,7 @@ $("btnGo").addEventListener("click", async () => {
     bgm_volume: +$("bgmVolSlider").value / 100,
     product_info: collectProductInfo(),
     template: $("selTemplate").value,
+    output_dir: $("outDirInput").value.trim(),
   };
   const btn = $("btnGo");
   btn.disabled = true; btn.textContent = "⏳ 提交中…";
