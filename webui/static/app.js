@@ -49,6 +49,26 @@ function makeSlot(i, kind) {
   return el;
 }
 
+function fillSlot(slot, img, kind) {
+  slot.classList.add("filled");
+  slot.innerHTML = `<img src="${img.url}"><span class="del">✕</span>`;
+  slot.querySelector(".del").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    slot.classList.remove("filled");
+    slot.innerHTML = `<div class="plus">＋</div><div class="lab">${kind === "prod" ? "上传产品图" : "上传模特图"}</div>`;
+    if (kind === "prod") state.prodImages = state.prodImages.filter((x) => x.path !== img.path);
+    else state.modelImages = state.modelImages.filter((x) => x.path !== img.path);
+    updateFee();
+    saveUiState();
+  });
+}
+
+function restoreSlots() {
+  const pg = $("prodGrid"), mg = $("modelGrid");
+  state.prodImages.slice(0, 9).forEach((img, i) => fillSlot(pg.children[i], img, "prod"));
+  state.modelImages.slice(0, 4).forEach((img, i) => fillSlot(mg.children[i], img, "model"));
+}
+
 function buildGrids() {
   const pg = $("prodGrid"), mg = $("modelGrid");
   pg.innerHTML = ""; mg.innerHTML = "";
@@ -65,20 +85,13 @@ $("fileInput").addEventListener("change", async (e) => {
   fd.append("kind", kind === "prod" ? "ref_image" : "ref_image");
   try {
     const res = await api("/api/upload", { method: "POST", body: fd });
-    slot.classList.add("filled");
-    slot.innerHTML = `<img src="${res.url}"><span class="del">✕</span>`;
-    slot.querySelector(".del").addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      slot.classList.remove("filled");
-      slot.innerHTML = `<div class="plus">＋</div><div class="lab">${kind === "prod" ? "上传产品图" : "上传模特图"}</div>`;
-      if (kind === "prod") state.prodImages = state.prodImages.filter((x) => x.path !== res.server_path);
-      else state.modelImages = state.modelImages.filter((x) => x.path !== res.server_path);
-      updateFee();
-    });
-    if (kind === "prod") state.prodImages.push({ path: res.server_path, url: res.url });
-    else state.modelImages.push({ path: res.server_path, url: res.url });
+    const img = { path: res.server_path, url: res.url };
+    fillSlot(slot, img, kind);
+    if (kind === "prod") state.prodImages.push(img);
+    else state.modelImages.push(img);
     toast(`已上传 ${f.name}`);
     updateFee();
+    saveUiState();
   } catch (err) {
     toast("上传失败: " + err.message);
   }
@@ -100,22 +113,25 @@ function updateFee() {
   const aiCount = +$("aiCountSlider").value;
   $("feeEst").innerHTML = `💰 预估费用：${numShots}分镜 × ${duration}s × ${res}${orient} = <b>¥${perShot.toFixed(2)} / 条</b>；全智能 ${aiCount} 条 = ¥${(perShot * aiCount).toFixed(2)}（单条约 ${Math.ceil(numShots * 12)} 分钟）`;
 }
-$("btnShotMinus").onclick = () => { numShots = Math.max(1, numShots - 1); updateShotInfo(); };
-$("btnShotPlus").onclick = () => { numShots = Math.min(10, numShots + 1); updateShotInfo(); };
+$("btnShotMinus").onclick = () => { numShots = Math.max(1, numShots - 1); updateShotInfo(); saveUiState(); };
+$("btnShotPlus").onclick = () => { numShots = Math.min(10, numShots + 1); updateShotInfo(); saveUiState(); };
 $("aiCountSlider").addEventListener("input", (e) => {
   $("aiCountVal").textContent = e.target.value + " 条";
   updateFee();
+  saveUiState();
 });
 $("durSlider").addEventListener("input", (e) => {
   duration = +e.target.value;
   $("durVal").textContent = duration + " 秒";
   updateShotInfo();
+  saveUiState();
 });
 $("segOrient").addEventListener("click", (e) => {
   if (e.target.dataset.v) {
     $("segOrient").querySelectorAll("button").forEach((b) => b.classList.remove("on"));
     e.target.classList.add("on");
     updateFee();
+    saveUiState();
   }
 });
 $("segRes").addEventListener("click", (e) => {
@@ -123,13 +139,14 @@ $("segRes").addEventListener("click", (e) => {
     $("segRes").querySelectorAll("button").forEach((b) => b.classList.remove("on"));
     e.target.classList.add("on");
     updateFee();
+    saveUiState();
   }
 });
 $("concVal") && ($("btnConcMinus").onclick = () => {
-  const v = Math.max(1, +$("concVal").textContent - 1); $("concVal").textContent = v;
+  const v = Math.max(1, +$("concVal").textContent - 1); $("concVal").textContent = v; saveUiState();
 });
 $("btnConcPlus").onclick = () => {
-  const v = Math.min(10, +$("concVal").textContent + 1); $("concVal").textContent = v;
+  const v = Math.min(10, +$("concVal").textContent + 1); $("concVal").textContent = v; saveUiState();
 };
 $("scriptText").addEventListener("input", (e) => {
   $("charCount").textContent = e.target.value.length + " 字";
@@ -188,9 +205,10 @@ $("btnAiStory").addEventListener("click", async () => {
     toast("AI 生成失败: " + err.message);
   } finally {
     btn.disabled = false; btn.textContent = "✨ AI 生成分镜";
+    saveUiState();
   }
 });
-$("btnClearScript").onclick = () => { $("scriptText").value = ""; $("charCount").textContent = "0 字"; };
+$("btnClearScript").onclick = () => { $("scriptText").value = ""; $("charCount").textContent = "0 字"; saveUiState(); };
 
 // ---------- 配音 ----------
 $("voiceSwitch").addEventListener("click", () => {
@@ -198,9 +216,10 @@ $("voiceSwitch").addEventListener("click", () => {
   $("voiceSwitch").classList.toggle("off", !state.voiceOn);
   $("voicePanel").style.display = state.voiceOn ? "block" : "none";
   if (state.voiceOn && state.voices.length === 0) loadVoices();
+  saveUiState();
 });
-$("speedSlider").addEventListener("input", (e) => { $("speedVal").textContent = (+e.target.value).toFixed(2) + "×"; });
-$("voiceVolSlider").addEventListener("input", (e) => { $("voiceVolVal").textContent = e.target.value + "%"; });
+$("speedSlider").addEventListener("input", (e) => { $("speedVal").textContent = (+e.target.value).toFixed(2) + "×"; saveUiState(); });
+$("voiceVolSlider").addEventListener("input", (e) => { $("voiceVolVal").textContent = e.target.value + "%"; saveUiState(); });
 
 async function loadVoices() {
   try {
@@ -213,10 +232,13 @@ async function loadVoices() {
       sel.appendChild(o);
     });
     if (state.voices.length) {
-      sel.value = state.voices[0].id;
-      state.voiceId = state.voices[0].id;
-      $("voicePickName").textContent = state.voices[0].name;
-      $("voicePickDesc").textContent = state.voices[0].desc || "";
+      // 恢复上次选的音色（存在才用，否则默认第一个）
+      const want = state.voices.some((v) => v.id === state.voiceId) ? state.voiceId : state.voices[0].id;
+      sel.value = want;
+      state.voiceId = want;
+      const v = state.voices.find((x) => x.id === want);
+      $("voicePickName").textContent = v.name;
+      $("voicePickDesc").textContent = v.desc || "";
     } else {
       $("voicePickName").textContent = "暂无音色";
       $("voicePickDesc").textContent = "请检查网络后刷新";
@@ -229,6 +251,7 @@ $("voiceSelect").addEventListener("change", (e) => {
     state.voiceId = v.id;
     $("voicePickName").textContent = v.name;
     $("voicePickDesc").textContent = v.desc || "";
+    saveUiState();
   }
 });
 // 复用 fileInput：BGM 上传
@@ -245,6 +268,7 @@ $("fileInput").addEventListener("change", async (e) => {
       state.bgmFile = res.server_path;
       $("bgmFileName").textContent = f.name;
       toast("BGM 已上传");
+      saveUiState();
     } catch (err) { toast("BGM 上传失败: " + err.message); }
   }
 });
@@ -280,8 +304,9 @@ $("bgmModeSeg").addEventListener("click", (e) => {
   $("bgmUploadRow").style.display = m === "upload" ? "flex" : "none";
   $("bgmLibraryRow").style.display = m === "library" ? "flex" : "none";
   if (m === "library" && !$("bgmSelect").options.length) loadBgm();
+  saveUiState();
 });
-$("bgmVolSlider").addEventListener("input", (e) => { $("bgmVolVal").textContent = e.target.value + "%"; });
+$("bgmVolSlider").addEventListener("input", (e) => { $("bgmVolVal").textContent = e.target.value + "%"; saveUiState(); });
 async function loadBgm() {
   try {
     const items = await api("/api/bgm");
@@ -293,14 +318,16 @@ async function loadBgm() {
       sel.appendChild(o);
     });
     if (items.length) {
-      state.bgmFile = items[0].path;
+      // 恢复上次选的曲目（存在才用）
+      if (state.bgmFile && items.some((it) => it.path === state.bgmFile)) sel.value = state.bgmFile;
+      else { state.bgmFile = items[0].path; sel.value = items[0].path; }
       $("bgmLibHint").textContent = `共 ${items.length} 首曲目`;
     } else {
       $("bgmLibHint").textContent = "曲库为空，可切换「上传」";
     }
   } catch (err) { toast("加载曲库失败: " + err.message); }
 }
-$("bgmSelect").addEventListener("change", (e) => { state.bgmFile = e.target.value; });
+$("bgmSelect").addEventListener("change", (e) => { state.bgmFile = e.target.value; saveUiState(); });
 $("btnBgmUpload").addEventListener("click", () => {
   uploadCtx = null; pendingAction = "bgm";
   const fi = $("fileInput");
@@ -337,8 +364,85 @@ $("btnDirPick").onclick = () => {
   $("outDirInput").value = curDirPath;
   $("maskDir").classList.remove("show");
   toast("输出目录已设置: " + curDirPath);
+  saveUiState();
 };
 $("btnDirClose").onclick = () => $("maskDir").classList.remove("show");
+
+// ---------- 参数自动保存（localStorage，刷新/重开自动恢复） ----------
+const UI_KEY = "ayh_ui_state_v1";
+let uiSaveTimer = null;
+function collectUiState() {
+  return {
+    prodName: $("prodName").value, prodParams: $("prodParams").value, prodSell: $("prodSell").value,
+    numShots, duration, aiCount: $("aiCountSlider").value,
+    template: $("selTemplate").value, workflow: $("selWorkflow").value,
+    scriptText: $("scriptText").value, dubText: $("dubText").value,
+    voiceOn: state.voiceOn, voiceId: state.voiceId,
+    speed: $("speedSlider").value, voiceVol: $("voiceVolSlider").value,
+    bgmMode: state.bgmMode, bgmFile: state.bgmFile,
+    bgmName: $("bgmModeSeg").querySelector(".on").dataset.mode === "upload" ? $("bgmFileName").textContent : ($("bgmSelect").selectedOptions[0]?.textContent || ""),
+    bgmVol: $("bgmVolSlider").value,
+    orient: $("segOrient").querySelector(".on").dataset.v,
+    res: $("segRes").querySelector(".on").dataset.r,
+    concurrency: $("concVal").textContent,
+    name: $("nameInput").value, outDir: $("outDirInput").value,
+    prodImages: state.prodImages, modelImages: state.modelImages,
+  };
+}
+function saveUiState() {
+  clearTimeout(uiSaveTimer);
+  uiSaveTimer = setTimeout(() => {
+    try { localStorage.setItem(UI_KEY, JSON.stringify(collectUiState())); } catch (e) { /* 忽略 */ }
+  }, 400);
+}
+function segSet(seg, v) {
+  seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === v || b.dataset.r === v));
+}
+function loadUiState() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(UI_KEY) || "null"); } catch (e) { return; }
+  if (!s) return;
+  $("prodName").value = s.prodName || "";
+  $("prodParams").value = s.prodParams || "";
+  $("prodSell").value = s.prodSell || "";
+  $("scriptText").value = s.scriptText || "";
+  $("dubText").value = s.dubText || "";
+  $("nameInput").value = s.name || "轻便侠218_成片";
+  $("outDirInput").value = s.outDir || "";
+  numShots = Math.max(1, Math.min(10, +s.numShots || 6));
+  duration = Math.max(5, Math.min(10, +s.duration || 10));
+  $("aiCountSlider").value = Math.max(1, Math.min(200, +s.aiCount || 1));
+  $("aiCountVal").textContent = $("aiCountSlider").value + " 条";
+  $("selTemplate").value = s.template || "";
+  $("selWorkflow").value = s.workflow || "multi_image";
+  $("speedSlider").value = s.speed || "1.05";
+  $("speedVal").textContent = (+$("speedSlider").value).toFixed(2) + "×";
+  $("voiceVolSlider").value = s.voiceVol ?? 100;
+  $("voiceVolVal").textContent = $("voiceVolSlider").value + "%";
+  $("bgmVolSlider").value = s.bgmVol ?? 30;
+  $("bgmVolVal").textContent = $("bgmVolSlider").value + "%";
+  $("concVal").textContent = Math.max(1, Math.min(10, +s.concurrency || 1));
+  if (s.orient) segSet($("segOrient"), s.orient);
+  if (s.res) segSet($("segRes"), s.res);
+  state.prodImages = Array.isArray(s.prodImages) ? s.prodImages : [];
+  state.modelImages = Array.isArray(s.modelImages) ? s.modelImages : [];
+  restoreSlots();
+  state.voiceOn = !!s.voiceOn;
+  state.voiceId = s.voiceId || "";
+  $("voiceSwitch").classList.toggle("off", !state.voiceOn);
+  $("voicePanel").style.display = state.voiceOn ? "block" : "none";
+  if (s.bgmMode) {
+    state.bgmMode = s.bgmMode;
+    $("bgmModeSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.mode === s.bgmMode));
+    $("bgmUploadRow").style.display = s.bgmMode === "upload" ? "flex" : "none";
+    $("bgmLibraryRow").style.display = s.bgmMode === "library" ? "flex" : "none";
+  }
+  state.bgmFile = s.bgmFile || "";
+  if (s.bgmName && $("bgmModeSeg").querySelector(".on").dataset.mode === "upload") {
+    $("bgmFileName").textContent = s.bgmName;
+  }
+  updateShotInfo();
+}
 
 // ---------- 开始生成 ----------
 $("btnGo").addEventListener("click", async () => {
@@ -523,7 +627,14 @@ async function refreshTtsStatus() {
 
 // ---------- 初始化 ----------
 buildGrids();
+loadUiState();      // 恢复上次保存的全部参数（图片/文本/开关/滑块/分段/BGM/输出目录）
 updateShotInfo();
 loadBgm();
 loadVoices();
 refreshTasks();
+// 文本类控件输入自动保存
+["prodName", "prodParams", "prodSell", "scriptText", "dubText", "nameInput", "selTemplate", "selWorkflow"].forEach((id) => {
+  const el = $(id);
+  el.addEventListener("input", saveUiState);
+  el.addEventListener("change", saveUiState);
+});
