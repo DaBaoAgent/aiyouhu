@@ -365,6 +365,9 @@ $("btnGo").addEventListener("click", async () => {
 });
 
 // ---------- 任务渲染 ----------
+function taskSig(t) {
+  return [t.status, t.progress, t.stage, t.error, t.size_mb].join("|");
+}
 function taskCard(t) {
   const st = {
     queued: ["st-wait", "⏳ 排队中"],
@@ -385,7 +388,7 @@ function taskCard(t) {
   if (t.status === "failed") metaBits.push(t.error);
   const bar = t.status === "running" || t.status === "queued"
     ? `<div class="bar"><i style="width:${t.progress}%"></i></div>` : "";
-  return `<div class="task">
+  return `<div class="task" data-tid="${t.id}" data-sig="${taskSig(t)}">
     <div class="thumb" onclick="${t.status === "success" ? `this.querySelector('video').play()\`` : ""}">${thumb}</div>
     <div class="info">
       <div class="name">${esc(t.name)} <span class="tag tag-blue">${esc(metaBits.join(" · "))}</span></div>
@@ -405,7 +408,15 @@ async function refreshTasks() {
       list.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px">暂无任务</div>';
       return;
     }
-    list.innerHTML = state.tasks.map(taskCard).join("");
+    // diff 渲染：只更新状态变化的卡片，播放中的成片不被轮询打断
+    const byId = new Map(state.tasks.map((t) => [t.id, t]));
+    [...list.children].forEach((el) => { if (!byId.has(el.dataset.tid)) el.remove(); });
+    state.tasks.forEach((t) => {
+      const el = list.querySelector(`[data-tid="${t.id}"]`);
+      const html = taskCard(t);
+      if (!el) list.insertAdjacentHTML("beforeend", html);
+      else if (el.dataset.sig !== taskSig(t)) el.outerHTML = html;
+    });
   } catch (err) { /* 轮询失败忽略 */ }
 }
 state.pollTimer = setInterval(refreshTasks, 5000);
