@@ -54,6 +54,16 @@ def get_tasks() -> list[dict]:
         return [dict(t) for t in sorted(TASKS.values(), key=lambda x: x.get("created_at", ""), reverse=True)]
 
 
+def mark_stale_failed():
+    """服务启动时调用：把非终态任务标记失败（重启后线程已丢失，无法继续）"""
+    with LOCK:
+        for t in TASKS.values():
+            if t.get("status") in ("queued", "running"):
+                t.update(status="failed", stage="失败",
+                         error="服务重启中断，任务未完成", finished_at=time.strftime("%H:%M:%S"))
+        _save()
+
+
 def _update(task_id: str, **kw):
     with LOCK:
         t = TASKS.get(task_id)

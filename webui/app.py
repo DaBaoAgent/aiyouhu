@@ -29,6 +29,12 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/files", StaticFiles(directory=str(DATA_DIR)), name="files")
 
 
+@app.on_event("startup")
+def _startup():
+    """重启后把遗留的 running/queued 任务标记失败（线程已丢失）"""
+    tasks.mark_stale_failed()
+
+
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
