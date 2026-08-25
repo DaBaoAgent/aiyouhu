@@ -430,6 +430,19 @@ def unique_path(p: Path) -> Path:
     return p.with_name(f"{stem}_{int(time.time())}{suffix}")
 
 
+def delete_task(tid: str) -> dict:
+    """删除任务记录（运行中拒绝；成片文件保留）"""
+    with LOCK:
+        t = TASKS.get(tid)
+        if not t:
+            raise KeyError(tid)
+        if t.get("status") in ("queued", "running"):
+            return {"ok": False, "error": "任务运行中，不能删除"}
+        TASKS.pop(tid, None)
+        _save(force=True)
+    return {"ok": True}
+
+
 def submit_manual(params: dict) -> str:
     """手动模式：用户已填好分镜脚本，生成 1 条成片"""
     tid = _submit_task(params.get("name", "成片"), params, {"script_text": params.get("script_text", "")})
