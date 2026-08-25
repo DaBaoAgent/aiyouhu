@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -21,9 +22,8 @@ import tts_client  # noqa: E402
 
 LOCK = threading.RLock()
 TASKS: dict[str, dict] = {}
-SEM: threading.Semaphore | None = None
+TASK_SEM = threading.Semaphore(3)  # 批量任务级并发信号量（同时最多 N 条成片任务在跑）
 TASKS_FILE = Path(__file__).resolve().parent / "data" / "tasks.json"
-CURRENT_CONCURRENCY = 1
 
 
 def _save():
@@ -44,9 +44,9 @@ def _load():
 
 
 def set_concurrency(n: int):
-    global SEM, CURRENT_CONCURRENCY
-    SEM = threading.Semaphore(max(1, int(n)))
-    CURRENT_CONCURRENCY = max(1, int(n))
+    """设置批量任务级并发上限（= min(并发数, 3)；每任务内分镜并发不受此限制）"""
+    global TASK_SEM
+    TASK_SEM = threading.Semaphore(max(1, min(int(n), 3)))
 
 
 def get_tasks() -> list[dict]:
@@ -144,41 +144,38 @@ def _h3_submit(workflow: str, prompt: str, images: list[str], resolution: str,
 
 
 def _gen_shot(task_id: str, shot_idx: int, params: dict, prompt: str, out_dir: Path) -> None:
-    """单个分镜视频（信号量内并发）"""
-    global SEM
-    sem = SEM or threading.Semaphore(1)
-    with sem:
-        _update(task_id, stage=f"分镜{shot_idx} 视频生成中")
-        _log(task_id, f"▶ 分镜{shot_idx} 提交 H3 任务（{params.get('resolution')} {params.get('duration')}s）")
-        t0 = time.time()
-        try:
-            out = out_dir / f"shot_{shot_idx:02d}.mp4"
-            _, _ = _h3_submit(
-                params.get("workflow", "multi_image"),
-                prompt,
-                params.get("images", []),
-                params.get("resolution", "1080p竖"),
-                int(params.get("duration", 10)),
-                out,
-                task_id=task_id,
-            )
-            _log(task_id, f"✅ 分镜{shot_idx} 视频生成完成（{out.stat().st_size / 1048576:.1f}MB，耗时{time.time() - t0:.0f}s）")
-            with LOCK:
-                for s in TASKS[task_id]["shots"]:
-                    if s["idx"] == shot_idx:
-                        s.update(status="done", file=str(out))
-                done = sum(1 for s in TASKS[task_id]["shots"] if s["status"] == "done")
-                total = len(TASKS[task_id]["shots"])
-                TASKS[task_id]["progress"] = int(55 + done / total * 35)
-                _save()
-        except Exception as e:
-            _log(task_id, f"❌ 分镜{shot_idx} 失败: {e}")
-            with LOCK:
-                for s in TASKS[task_id]["shots"]:
-                    if s["idx"] == shot_idx:
-                        s.update(status="failed", error=str(e))
-                _save()
-            raise
+    """单个分镜视频（由任务级线程池并发调用，不再依赖全局信号量）"""
+    _update(task_id, stage=f"分镜{shot_idx} 视频生成中")
+    _log(task_id, f"▶ 分镜{shot_idx} 提交 H3 任务（{params.get('resolution')} {params.get('duration')}s）")
+    t0 = time.time()
+    try:
+        out = out_dir / f"shot_{shot_idx:02d}.mp4"
+        _, _ = _h3_submit(
+            params.get("workflow", "multi_image"),
+            prompt,
+            params.get("images", []),
+            params.get("resolution", "1080p竖"),
+            int(params.get("duration", 10)),
+            out,
+            task_id=task_id,
+        )
+        _log(task_id, f"✅ 分镜{shot_idx} 视频生成完成（{out.stat().st_size / 1048576:.1f}MB，耗时{time.time() - t0:.0f}s）")
+        with LOCK:
+            for s in TASKS[task_id]["shots"]:
+                if s["idx"] == shot_idx:
+                    s.update(status="done", file=str(out))
+            done = sum(1 for s in TASKS[task_id]["shots"] if s["status"] == "done")
+            total = len(TASKS[task_id]["shots"])
+            TASKS[task_id]["progress"] = int(55 + done / total * 35)
+            _save()
+    except Exception as e:
+        _log(task_id, f"❌ 分镜{shot_idx} 失败: {e}")
+        with LOCK:
+            for s in TASKS[task_id]["shots"]:
+                if s["idx"] == shot_idx:
+                    s.update(status="failed", error=str(e))
+            _save()
+        raise
 
 
 def _merge_and_mix(task: dict, params: dict, shot_files: list[Path], voice_wav: Path | None) -> Path:
@@ -303,10 +300,10 @@ def _run_film(task_id: str, card: dict, params: dict):
             _save()
         _update(task_id, stage=f"共{len(shots)}个分镜 · 提交中")
 
-        # 并行：视频生成 与 配音
+        # 并行：视频生成（每任务独立线程池，互不干扰） 与 配音（主线程）
         results: dict[int, Path] = {}
         errors: list[str] = []
-        vthreads = []
+        concurrency = max(1, int(params.get("concurrency", 1)))
 
         def worker(idx: int, prompt: str):
             try:
@@ -315,25 +312,21 @@ def _run_film(task_id: str, card: dict, params: dict):
             except Exception as e:
                 errors.append(f"分镜{idx}: {e}")
 
-        for i, sh in enumerate(shots, start=1):
-            t = threading.Thread(target=worker, args=(i, sh), daemon=True)
-            vthreads.append(t)
-            t.start()
-
-        # 主线程配音（与视频并行）
-        voice_wav = None
-        if params.get("voice_on") and params.get("dub_text", "").strip():
-            _log(task_id, "🎙 配音生成中（edge-tts 云端）")
-            try:
-                voice_wav = _dub_voice(task_id, card.get("dub") or params["dub_text"],
-                                       params["voice_id"], float(params.get("speed", 1.05)))
-                _log(task_id, "✅ 配音完成")
-            except Exception as e:
-                errors.append(f"配音: {e}")
-                _log(task_id, f"❌ 配音失败: {e}")
-
-        for t in vthreads:
-            t.join()
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futs = [pool.submit(worker, i, sh) for i, sh in enumerate(shots, start=1)]
+            # 主线程配音（与视频并行）
+            voice_wav = None
+            if params.get("voice_on") and params.get("dub_text", "").strip():
+                _log(task_id, "🎙 配音生成中（edge-tts 云端）")
+                try:
+                    voice_wav = _dub_voice(task_id, card.get("dub") or params["dub_text"],
+                                           params["voice_id"], float(params.get("speed", 1.05)))
+                    _log(task_id, "✅ 配音完成")
+                except Exception as e:
+                    errors.append(f"配音: {e}")
+                    _log(task_id, f"❌ 配音失败: {e}")
+            for f in futs:
+                f.result()
 
         if errors:
             raise RuntimeError("；".join(errors[:3]))
