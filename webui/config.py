@@ -6,7 +6,7 @@ from pathlib import Path
 
 # 项目根目录（webui/）
 BASE_DIR = Path(__file__).resolve().parent
-# ayh-h3 仓库根（含 scripts/h3_gen.py）
+# aiyouhu 仓库根（含 scripts/h3_gen.py）
 REPO_DIR = BASE_DIR.parent
 H3_SCRIPTS_DIR = REPO_DIR / "scripts"
 ENV_FILE = H3_SCRIPTS_DIR / ".env"          # AUTODL_API_KEY（与 CLI 共用）

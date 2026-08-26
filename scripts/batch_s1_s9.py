@@ -2,7 +2,7 @@
 """S1-S9 轻便侠主图视频批量生成：提交全部 → 轮询 → SUCCESS 立即下载 → 断点续传"""
 import io, os, re, sys, time, json, glob
 
-SCRIPTS_DIR = r'C:\Users\xxx13\AppData\Local\hermes\skills\media\ayh-h3\scripts'
+SCRIPTS_DIR = r'C:\Users\xxx13\AppData\Local\hermes\skills\media\aiyouhu\scripts'
 sys.path.insert(0, SCRIPTS_DIR)
 import h3_gen
 

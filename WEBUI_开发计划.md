@@ -1,7 +1,7 @@
-# ayh-h3 WebUI 开发计划（v2 · 按用户修改更新）
+# aiyouhu WebUI 开发计划（v2 · 按用户修改更新）
 
 > 项目：爱优护轻便侠 218 电动轮椅 H3 视频生成配套界面
-> 根目录：`D:\@kaifa\aiyouhu\ayh-h3\`（现有 SKILL.md + scripts/h3_gen.py + prompts/）
+> 根目录：`D:\@kaifa\aiyouhu\aiyouhu\`（现有 SKILL.md + scripts/h3_gen.py + prompts/）
 > 目标：零代码小白可用，浏览器打开即生成主图视频/推广视频
 > v2 变更：产品图 9 槽 / 配音改本机 GPT-SoVITS / 分镜用 DeepSeek / 增加横竖屏选择
 
@@ -51,7 +51,7 @@
 ## 四、目录结构
 
 ```
-ayh-h3/webui/
+aiyouhu/webui/
 ├── app.py              # FastAPI 入口 + 路由
 ├── tasks.py            # 任务队列/状态/进度管理
 ├── settings.py         # API key/配置读写 scripts/.env、参数校验
